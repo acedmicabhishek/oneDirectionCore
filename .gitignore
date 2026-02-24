@@ -4,6 +4,7 @@ builddir/
 bin/
 obj/
 *.exe
+!ODC.exe
 *.dll
 *.so
 *.dylib
