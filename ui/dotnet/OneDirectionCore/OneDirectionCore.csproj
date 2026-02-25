@@ -18,11 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="od_core.dll">
+    <None Include="od_core.dll" Condition="Exists('od_core.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <IncludeInSingleFile>true</IncludeInSingleFile>
     </None>
-    <None Include="ODC-overlay-win.exe">
+    <None Include="ODC-overlay-win.exe" Condition="Exists('ODC-overlay-win.exe')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <IncludeInSingleFile>true</IncludeInSingleFile>
     </None>

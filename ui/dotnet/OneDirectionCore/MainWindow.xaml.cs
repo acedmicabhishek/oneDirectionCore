@@ -182,5 +182,33 @@ namespace OneDirectionCore
                 this.DragMove();
             }
         }
+
+        // --- Slider value label handlers ---
+        private void SliderSensitivity_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+            => LblSensitivity.Text = ((int)e.NewValue).ToString();
+
+        private void SliderSeparation_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+            => LblSeparation.Text = ((int)e.NewValue).ToString();
+
+        private void SliderRadarSize_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+            => LblRadarSize.Text = ((int)e.NewValue).ToString();
+
+        private void SliderGlobalOpacity_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+            => LblGlobalOpacity.Text = $"{(int)e.NewValue}%";
+
+        private void SliderRadarOpacity_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+            => LblRadarOpacity.Text = $"{(int)e.NewValue}%";
+
+        private void SliderDotOpacity_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+            => LblDotOpacity.Text = $"{(int)e.NewValue}%";
+
+        private void SliderRange_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+            => LblRange.Text = ((int)e.NewValue).ToString();
+
+        private void SliderMaxEntities_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+            => LblMaxEntities.Text = ((int)e.NewValue).ToString();
+
+        private void SliderPollRate_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+            => LblPollRate.Text = $"{(int)e.NewValue} Hz";
     }
 }

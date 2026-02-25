@@ -10,7 +10,7 @@ glfw_dep = dependency('glfw3', required: false)
 if host_machine.system() == 'windows'
   gl_dep = cc.find_library('opengl32')
   gdi32_dep = cc.find_library('gdi32')
-  dwmapi_dep = cc.find_library('dwmapi')
+  dwmapi_dep = cc.find_library('dwmapi', required: false)
 
   core_lib = shared_library('od_core',
     sources: [

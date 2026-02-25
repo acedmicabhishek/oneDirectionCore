@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
@@ -40,6 +42,17 @@ namespace OneDirectionCore
         private readonly Color _themeTeal = Color.FromRgb(0, 220, 180);
         private readonly Color _themeBackground = Color.FromRgb(10, 15, 25);
 
+        // WinAPI constants for click-through
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_TRANSPARENT = 0x00000020;
+        private const int WS_EX_LAYERED    = 0x00080000;
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hwnd, int index);
+
+        [DllImport("user32.dll")]
+        private static extern int SetWindowLong(IntPtr hwnd, int index, int newStyle);
+
         public OverlayWindow(double sensitivity, double separation, int maxEntities, double radarSize, double globalOpacity, double radarOpacity, double dotOpacity, double range, int osdPos, bool fullscreen)
         {
             InitializeComponent();
@@ -55,7 +68,6 @@ namespace OneDirectionCore
             _osdPosition = osdPos;
             _fullscreen = fullscreen;
 
-            
             this.WindowState = WindowState.Maximized;
             this.Background = Brushes.Transparent;
             this.AllowsTransparency = true;
@@ -65,6 +77,15 @@ namespace OneDirectionCore
             this.IsHitTestVisible = false;
 
             CompositionTarget.Rendering += OnRendering;
+        }
+
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            // Apply WS_EX_TRANSPARENT so Windows ignores ALL mouse input on this window
+            var hwnd = new WindowInteropHelper(this).Handle;
+            int style = GetWindowLong(hwnd, GWL_EXSTYLE);
+            SetWindowLong(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT);
         }
 
         public void StartEngine(int pollRate)

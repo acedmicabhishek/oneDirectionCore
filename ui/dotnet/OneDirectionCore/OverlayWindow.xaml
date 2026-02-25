@@ -5,8 +5,8 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" IsHitTestVisible="False">
     
-    <Grid>
-        <!-- Canvas for drawing radar dots and HUD -->
-        <Canvas x:Name="RadarCanvas" HorizontalAlignment="Left" VerticalAlignment="Top"/>
-    </Grid>
+    <!-- Root Canvas so Canvas.SetLeft/SetTop works on RadarCanvas -->
+    <Canvas x:Name="RootCanvas">
+        <Canvas x:Name="RadarCanvas"/>
+    </Canvas>
 </Window>

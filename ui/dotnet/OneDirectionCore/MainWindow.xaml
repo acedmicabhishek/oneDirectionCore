@@ -201,12 +201,18 @@
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                    <TextBlock Text="Sensitivity"/>
-                    <Slider x:Name="SliderSensitivity" Minimum="0" Maximum="100" Value="70"/>
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Sensitivity" Grid.Column="0"/>
+                        <TextBlock x:Name="LblSensitivity" Text="70" Grid.Column="1" Foreground="#00D2B4" FontWeight="Bold"/>
+                    </Grid>
+                    <Slider x:Name="SliderSensitivity" Minimum="0" Maximum="100" Value="70" ValueChanged="SliderSensitivity_ValueChanged"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                    <TextBlock Text="Separation"/>
-                    <Slider x:Name="SliderSeparation" Minimum="0" Maximum="100" Value="50"/>
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Separation" Grid.Column="0"/>
+                        <TextBlock x:Name="LblSeparation" Text="50" Grid.Column="1" Foreground="#00D2B4" FontWeight="Bold"/>
+                    </Grid>
+                    <Slider x:Name="SliderSeparation" Minimum="0" Maximum="100" Value="50" ValueChanged="SliderSeparation_ValueChanged"/>
                 </StackPanel>
             </Grid>
 
@@ -227,32 +233,53 @@
                 <ComboBoxItem>Bottom-Right</ComboBoxItem>
             </ComboBox>
 
-            <TextBlock Text="Radar HUD Size"/>
-            <Slider x:Name="SliderRadarSize" Minimum="100" Maximum="600" Value="280"/>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Radar HUD Size" Grid.Column="0"/>
+                <TextBlock x:Name="LblRadarSize" Text="280" Grid.Column="1" Foreground="#00D2B4" FontWeight="Bold"/>
+            </Grid>
+            <Slider x:Name="SliderRadarSize" Minimum="100" Maximum="600" Value="280" ValueChanged="SliderRadarSize_ValueChanged"/>
 
-            <TextBlock Text="Global Overlay Opacity"/>
-            <Slider x:Name="SliderGlobalOpacity" Minimum="0" Maximum="100" Value="100"/>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Global Overlay Opacity" Grid.Column="0"/>
+                <TextBlock x:Name="LblGlobalOpacity" Text="100%" Grid.Column="1" Foreground="#00D2B4" FontWeight="Bold"/>
+            </Grid>
+            <Slider x:Name="SliderGlobalOpacity" Minimum="0" Maximum="100" Value="100" ValueChanged="SliderGlobalOpacity_ValueChanged"/>
 
-            <TextBlock Text="Radar HUD Opacity"/>
-            <Slider x:Name="SliderRadarOpacity" Minimum="0" Maximum="100" Value="80"/>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Radar HUD Opacity" Grid.Column="0"/>
+                <TextBlock x:Name="LblRadarOpacity" Text="80%" Grid.Column="1" Foreground="#00D2B4" FontWeight="Bold"/>
+            </Grid>
+            <Slider x:Name="SliderRadarOpacity" Minimum="0" Maximum="100" Value="80" ValueChanged="SliderRadarOpacity_ValueChanged"/>
 
-            <TextBlock Text="Entity / Dot Opacity"/>
-            <Slider x:Name="SliderDotOpacity" Minimum="10" Maximum="100" Value="100"/>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Entity / Dot Opacity" Grid.Column="0"/>
+                <TextBlock x:Name="LblDotOpacity" Text="100%" Grid.Column="1" Foreground="#00D2B4" FontWeight="Bold"/>
+            </Grid>
+            <Slider x:Name="SliderDotOpacity" Minimum="10" Maximum="100" Value="100" ValueChanged="SliderDotOpacity_ValueChanged"/>
 
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                    <TextBlock Text="Zoom / Range"/>
-                    <Slider x:Name="SliderRange" Minimum="1" Maximum="200" Value="100"/>
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Zoom / Range" Grid.Column="0"/>
+                        <TextBlock x:Name="LblRange" Text="100" Grid.Column="1" Foreground="#00D2B4" FontWeight="Bold"/>
+                    </Grid>
+                    <Slider x:Name="SliderRange" Minimum="1" Maximum="200" Value="100" ValueChanged="SliderRange_ValueChanged"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                    <TextBlock Text="Max Entities"/>
-                    <Slider x:Name="SliderMaxEntities" Minimum="1" Maximum="10" Value="6"/>
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Max Entities" Grid.Column="0"/>
+                        <TextBlock x:Name="LblMaxEntities" Text="6" Grid.Column="1" Foreground="#00D2B4" FontWeight="Bold"/>
+                    </Grid>
+                    <Slider x:Name="SliderMaxEntities" Minimum="1" Maximum="10" Value="6" ValueChanged="SliderMaxEntities_ValueChanged"/>
                 </StackPanel>
             </Grid>
             
-            <TextBlock Text="Polling Rate (Hz)"/>
-            <Slider x:Name="SliderPollRate" Minimum="30" Maximum="240" Value="144"/>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Polling Rate (Hz)" Grid.Column="0"/>
+                <TextBlock x:Name="LblPollRate" Text="144 Hz" Grid.Column="1" Foreground="#00D2B4" FontWeight="Bold"/>
+            </Grid>
+            <Slider x:Name="SliderPollRate" Minimum="30" Maximum="240" Value="144" ValueChanged="SliderPollRate_ValueChanged"/>
 
             <Separator/>
 
