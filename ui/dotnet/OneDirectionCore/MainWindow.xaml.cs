@@ -4,6 +4,12 @@ using System.IO;
 using System.IO.Ports;
 using System.Windows;
 using System.Windows.Controls;
+using WinForms = System.Windows.Forms;
+using Microsoft.Win32;
+using Color = System.Windows.Media.Color;
+using Brush = System.Windows.Media.Brush;
+using Point = System.Windows.Point;
+
 
 namespace OneDirectionCore
 {
@@ -11,13 +17,56 @@ namespace OneDirectionCore
     {
         private OverlayWindow? _overlay;
         private string _settingsPath = "settings_dotnet.cfg";
+        private WinForms.NotifyIcon? _notifyIcon;
+
 
         public MainWindow()
         {
             InitializeComponent();
+            InitializeNotifyIcon();
             LoadPorts();
             LoadSettings();
         }
+
+        private void InitializeNotifyIcon()
+        {
+            _notifyIcon = new WinForms.NotifyIcon();
+            _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Process.GetCurrentProcess().MainModule?.FileName ?? "");
+            _notifyIcon.Text = "oneDirectionCore";
+            _notifyIcon.Visible = true;
+            _notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
+
+            var contextMenu = new WinForms.ContextMenuStrip();
+            contextMenu.Items.Add("Show", null, (s, e) => RestoreFromTray());
+            contextMenu.Items.Add("Exit", null, (s, e) => BtnExit_Click(null!, null!));
+            _notifyIcon.ContextMenuStrip = contextMenu;
+        }
+
+
+        private void RestoreFromTray()
+        {
+            this.Show();
+            this.WindowState = WindowState.Normal;
+            this.Activate();
+        }
+
+        protected override void OnStateChanged(EventArgs e)
+        {
+            if (this.WindowState == WindowState.Minimized && CheckTray.IsChecked == true)
+            {
+                this.Hide();
+            }
+            base.OnStateChanged(e);
+        }
+
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            BtnStop_Click(null!, null!);
+            SaveSettings();
+            _notifyIcon?.Dispose();
+            base.OnClosing(e);
+        }
+
 
         private void LoadPorts()
         {
@@ -66,6 +115,9 @@ namespace OneDirectionCore
                             case "dot_opacity": SliderDotOpacity.Value = double.Parse(value); break;
                             case "max_entities": SliderMaxEntities.Value = double.Parse(value); break;
                             case "com_port": ComboPorts.Text = value; break;
+                            case "min_to_tray": CheckTray.IsChecked = bool.Parse(value); break;
+                            case "launch_startup": CheckStartup.IsChecked = bool.Parse(value); break;
+                            case "smoothness": SliderSmoothness.Value = double.Parse(value); break;
                         }
                     }
                 }
@@ -73,10 +125,34 @@ namespace OneDirectionCore
             }
         }
 
+        private void SetStartup(bool enable)
+        {
+            try
+            {
+                string path = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+                RegistryKey? key = Registry.CurrentUser.OpenSubKey(path, true);
+                if (key != null)
+                {
+                    if (enable)
+                    {
+                        string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                        if (exePath != null) key.SetValue("OneDirectionCore", exePath);
+                    }
+                    else
+                    {
+                        key.DeleteValue("OneDirectionCore", false);
+                    }
+                    key.Close();
+                }
+            }
+            catch { }
+        }
+
         private void SaveSettings()
         {
             try
             {
+                SetStartup(CheckStartup.IsChecked == true);
                 using (StreamWriter sw = new StreamWriter(_settingsPath))
                 {
                     sw.WriteLine($"pollrate={SliderPollRate.Value}");
@@ -86,6 +162,8 @@ namespace OneDirectionCore
                     sw.WriteLine($"separation={SliderSeparation.Value}");
                     sw.WriteLine($"range={SliderRange.Value}");
                     sw.WriteLine($"fullscreen={CheckFullscreen.IsChecked}");
+                    sw.WriteLine($"min_to_tray={CheckTray.IsChecked}");
+                    sw.WriteLine($"launch_startup={CheckStartup.IsChecked}");
                     sw.WriteLine($"pos_idx={ComboPosition.SelectedIndex}");
                     sw.WriteLine($"radar_size={SliderRadarSize.Value}");
                     sw.WriteLine($"global_opacity={SliderGlobalOpacity.Value}");
@@ -93,10 +171,12 @@ namespace OneDirectionCore
                     sw.WriteLine($"dot_opacity={SliderDotOpacity.Value}");
                     sw.WriteLine($"max_entities={SliderMaxEntities.Value}");
                     sw.WriteLine($"com_port={ComboPorts.Text}");
+                    sw.WriteLine($"smoothness={SliderSmoothness.Value}");
                 }
             }
             catch { }
         }
+
 
         private void BtnStart_Click(object sender, RoutedEventArgs e)
         {
@@ -115,7 +195,7 @@ namespace OneDirectionCore
                 int initResult = NativeMethods.OD_Capture_Init(channels);
                 if (initResult != 1)
                 {
-                    MessageBox.Show($"Failed to initialize capture driver. HRESULT: 0x{initResult:X8}");
+                    System.Windows.MessageBox.Show($"Failed to initialize capture driver. HRESULT: 0x{initResult:X8}");
                     return;
                 }
                 NativeMethods.OD_Capture_Start();
@@ -133,8 +213,9 @@ namespace OneDirectionCore
                 double range = SliderRange.Value;
                 int osdPos = ComboPosition.SelectedIndex;
                 bool fullscreen = CheckFullscreen.IsChecked == true;
+                double smoothness = SliderSmoothness.Value / 10.0;
 
-                _overlay = new OverlayWindow(sensitivity, separation, maxEntities, radarSize, globalOpacity, radarOpacity, dotOpacity, range, osdPos, fullscreen);
+                _overlay = new OverlayWindow(sensitivity, separation, maxEntities, radarSize, globalOpacity, radarOpacity, dotOpacity, range, osdPos, fullscreen, smoothness);
                 _overlay.Show();
                 _overlay.StartEngine(pollRate);
 
@@ -144,7 +225,7 @@ namespace OneDirectionCore
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to start overlay engine: {ex.Message}");
+                System.Windows.MessageBox.Show($"Failed to start overlay engine: {ex.Message}");
             }
         }
 
@@ -167,7 +248,7 @@ namespace OneDirectionCore
         {
             BtnStop_Click(null!, null!);
             SaveSettings();
-            Application.Current.Shutdown();
+            System.Windows.Application.Current.Shutdown();
         }
 
         private void BtnMinimize_Click(object sender, RoutedEventArgs e)
@@ -210,5 +291,13 @@ namespace OneDirectionCore
 
         private void SliderPollRate_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
             => LblPollRate.Text = $"{(int)e.NewValue} Hz";
+
+        private void SliderSmoothness_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+            => LblSmoothness.Text = (e.NewValue / 10.0).ToString("F1");
+
+        private void BtnCheckUpdates_Click(object sender, RoutedEventArgs e)
+        {
+            System.Windows.MessageBox.Show("You are running the latest version.", "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 }

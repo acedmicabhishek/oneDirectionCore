@@ -8,6 +8,14 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using Color = System.Windows.Media.Color;
+using Brush = System.Windows.Media.Brush;
+using Point = System.Windows.Point;
+using Rectangle = System.Windows.Shapes.Rectangle;
+using Ellipse = System.Windows.Shapes.Ellipse;
+using Line = System.Windows.Shapes.Line;
+using Polygon = System.Windows.Shapes.Polygon;
+using Brushes = System.Windows.Media.Brushes;
 
 namespace OneDirectionCore
 {
@@ -23,6 +31,7 @@ namespace OneDirectionCore
         private double _zoom;
         private int _osdPosition; 
         private bool _fullscreen;
+        private double _smoothness;
 
         private float _sweepAngle = 0.0f;
         private DateTime _lastFrameTime = DateTime.Now;
@@ -53,7 +62,7 @@ namespace OneDirectionCore
         [DllImport("user32.dll")]
         private static extern int SetWindowLong(IntPtr hwnd, int index, int newStyle);
 
-        public OverlayWindow(double sensitivity, double separation, int maxEntities, double radarSize, double globalOpacity, double radarOpacity, double dotOpacity, double range, int osdPos, bool fullscreen)
+        public OverlayWindow(double sensitivity, double separation, int maxEntities, double radarSize, double globalOpacity, double radarOpacity, double dotOpacity, double range, int osdPos, bool fullscreen, double smoothness)
         {
             InitializeComponent();
             
@@ -67,6 +76,7 @@ namespace OneDirectionCore
             _zoom = range / 50.0;
             _osdPosition = osdPos;
             _fullscreen = fullscreen;
+            _smoothness = smoothness;
 
             this.WindowState = WindowState.Maximized;
             this.Background = Brushes.Transparent;
@@ -121,8 +131,10 @@ namespace OneDirectionCore
             int activeCount = data.EntityCount;
             if (activeCount > _maxEntities) activeCount = _maxEntities;
 
-            
             var entities = data.GetEntities().Take(activeCount).OrderBy(e => e.Distance).ToList();
+
+            // Smoothness: 0 = snappy (lerpSpeed=20), 5 = very smooth (lerpSpeed=1)
+            float lerpSpeed = (float)(20.0 / (1.0 + _smoothness * 3.8));
 
             for (int i = 0; i < MaxBlips; i++)
             {
@@ -134,11 +146,11 @@ namespace OneDirectionCore
                     float diff = targetAz - _blips[i].Azimuth;
                     if (diff > 180.0f) diff -= 360.0f;
                     if (diff < -180.0f) diff += 360.0f;
-                    _blips[i].Azimuth += diff * dt * 8.0f;
+                    _blips[i].Azimuth += diff * dt * lerpSpeed;
                     if (_blips[i].Azimuth < 0) _blips[i].Azimuth += 360.0f;
                     if (_blips[i].Azimuth >= 360.0f) _blips[i].Azimuth -= 360.0f;
 
-                    _blips[i].Distance += (targetDist - _blips[i].Distance) * dt * 8.0f;
+                    _blips[i].Distance += (targetDist - _blips[i].Distance) * dt * lerpSpeed;
                     _blips[i].Alpha = 1.0f;
                     _blips[i].Type = entities[i].SoundType;
                 }
