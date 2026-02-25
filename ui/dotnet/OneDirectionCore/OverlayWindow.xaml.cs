@@ -133,8 +133,8 @@ namespace OneDirectionCore
 
             var entities = data.GetEntities().Take(activeCount).OrderBy(e => e.Distance).ToList();
 
-            // Smoothness: 0 = snappy (lerpSpeed=18), 1 = very smooth (lerpSpeed=2)
-            float lerpSpeed = (float)((1.0 - _smoothness) * 16.0 + 2.0);
+            // Smoothness: 0 = snappy (lerpSpeed=20), 5 = very smooth (lerpSpeed=1)
+            float lerpSpeed = (float)(20.0 / (1.0 + _smoothness * 3.8));
 
             for (int i = 0; i < MaxBlips; i++)
             {

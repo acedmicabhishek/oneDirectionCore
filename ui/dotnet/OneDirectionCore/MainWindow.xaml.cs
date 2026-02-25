@@ -213,7 +213,7 @@ namespace OneDirectionCore
                 double range = SliderRange.Value;
                 int osdPos = ComboPosition.SelectedIndex;
                 bool fullscreen = CheckFullscreen.IsChecked == true;
-                double smoothness = SliderSmoothness.Value / 100.0;
+                double smoothness = SliderSmoothness.Value / 10.0;
 
                 _overlay = new OverlayWindow(sensitivity, separation, maxEntities, radarSize, globalOpacity, radarOpacity, dotOpacity, range, osdPos, fullscreen, smoothness);
                 _overlay.Show();
@@ -293,7 +293,7 @@ namespace OneDirectionCore
             => LblPollRate.Text = $"{(int)e.NewValue} Hz";
 
         private void SliderSmoothness_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-            => LblSmoothness.Text = (e.NewValue / 100.0).ToString("F2");
+            => LblSmoothness.Text = (e.NewValue / 10.0).ToString("F1");
 
         private void BtnCheckUpdates_Click(object sender, RoutedEventArgs e)
         {
