@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download OneDirectionCore</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --container-bg: #1e1e1e;
+            --accent-color: #00d2b4;
+            --text-primary: #ffffff;
+            --text-secondary: #888888;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            background-color: var(--container-bg);
+            padding: 3rem;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            border: 1px solid #333;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+        }
+
+        p {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            font-size: 1rem;
+        }
+
+        .download-btn {
+            display: inline-block;
+            background-color: var(--accent-color);
+            color: #000;
+            text-decoration: none;
+            padding: 1rem 2rem;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 210, 180, 0.3);
+        }
+
+        .details {
+            margin-top: 1.5rem;
+            font-size: 0.8rem;
+            color: #555;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>ODC</h1>
+        <p>Advanced Spatial Audio Radar</p>
+        <a href="Download/ODC.msi" class="download-btn">Download Installer</a>
+        <div class="details">
+            Windows 10/11 x64<br>
+            Version 1.0.0
+        </div>
+    </div>
+</body>
+
+</html>
