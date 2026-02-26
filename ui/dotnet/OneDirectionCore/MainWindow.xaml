@@ -283,11 +283,9 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="Input Channels" Margin="0,0,0,5"/>
-                            <ComboBox x:Name="ComboChannels" Margin="0">
-                                <ComboBoxItem IsSelected="True">Stereo (2.0)</ComboBoxItem>
-                                <ComboBoxItem>Surround (5.1)</ComboBoxItem>
-                                <ComboBoxItem>Surround (7.1)</ComboBoxItem>
+                            <TextBlock Text="CABLE Input (to ODC)" Margin="0,0,0,5" Foreground="#00D2B4" FontWeight="Bold" FontSize="11"/>
+                            <ComboBox x:Name="ComboChannels" Margin="0" IsEnabled="False">
+                                <ComboBoxItem IsSelected="True">Surround (7.1)</ComboBoxItem>
                             </ComboBox>
                         </StackPanel>
                         <StackPanel Grid.Column="2">
@@ -298,6 +296,21 @@
                             </ComboBox>
                         </StackPanel>
                     </Grid>
+
+                    <TextBlock Text="CABLE Output (to Speakers)" Margin="0,5,0,5" Foreground="#00D2B4" FontWeight="Bold" FontSize="11"/>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="5"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="5"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="ComboOutputDevice" Grid.Column="0" SelectionChanged="ComboOutputDevice_SelectionChanged" Margin="0"/>
+                        <Button x:Name="BtnEnableCable" Grid.Column="2" Content="⚡ ENABLE CABLE" Width="130" Click="BtnEnableCable_Click" ToolTip="Enable 'Listen to this device' on CABLE Output so you can hear audio through your speakers"/>
+                        <Button x:Name="BtnStereoOutput" Grid.Column="4" Content="🔊 STEREO" Width="90" Style="{StaticResource PrimaryButton}" Click="BtnStereoOutput_Click" ToolTip="Confirm stereo output is active"/>
+                    </Grid>
+                    <CheckBox x:Name="CheckCableWarning" Content="Show CABLE setup warning on startup" Margin="0,3,0,0" IsChecked="True" Checked="CheckCableWarning_Changed" Unchecked="CheckCableWarning_Changed"/>
 
                     <Grid Margin="0,5,0,0">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>

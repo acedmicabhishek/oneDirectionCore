@@ -35,3 +35,12 @@ Thumbs.db
 *.swp
 *.bak
 
+
+
+!winInstaller/drivers/*.exe
+!winInstaller/drivers/*.cat
+!winInstaller/drivers/*.inf
+!winInstaller/drivers/*.sys
+
+!winInstaller/settings_dotnet.cfg
+!winInstaller/imgui.ini

@@ -18,6 +18,8 @@ Made for people with disabilities or hard of hearing to help them enjoy Compitit
 - Transparent, OS-level click-through WPF overlay
 - Radar Map and full screen OSD available
 - Support for Linux and Windows
+
+
 ![Platform Support](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)
 ![.NET Version](https://img.shields.io/badge/.NET-10.0-purple)
 [![Download ODC](https://img.shields.io/badge/Download-ODC.msi-brightgreen?style=for-the-badge&logo=windows)](Download/ODC.msi)

@@ -1,9 +1,13 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Ports;
+using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using WinForms = System.Windows.Forms;
 using Microsoft.Win32;
 using Color = System.Windows.Media.Color;
@@ -18,6 +22,12 @@ namespace OneDirectionCore
         private OverlayWindow? _overlay;
         private string _settingsPath = "settings_dotnet.cfg";
         private WinForms.NotifyIcon? _notifyIcon;
+        private List<string> _outputDeviceIds = new();
+        private List<string> _outputDeviceNames = new();
+        private bool _suppressDeviceChange = false;
+        private bool _userManuallySelected = false;
+        private bool _cableSetupDone = false;
+        private DispatcherTimer? _devicePollTimer;
 
 
         public MainWindow()
@@ -25,7 +35,132 @@ namespace OneDirectionCore
             InitializeComponent();
             InitializeNotifyIcon();
             LoadPorts();
+            LoadOutputDevices();
+            AutoAssignOutputDevice();
             LoadSettings();
+            StartDevicePolling();
+            CheckFirstRun();
+        }
+
+        private void CheckFirstRun()
+        {
+            if (!_cableSetupDone)
+            {
+                var result = System.Windows.MessageBox.Show(
+                    "VB-Cable 'Listen to this device' must be enabled for audio to reach your speakers.\n\n" +
+                    "Would you like to open the setup guide now?\n\n" +
+                    "Click 'No' to disable this warning permanently.\n" +
+                    "(You can always use the ⚡ ENABLE CABLE button later)",
+                    "First-Time CABLE Setup",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    BtnEnableCable_Click(this, new RoutedEventArgs());
+                }
+                else
+                {
+                    _cableSetupDone = true;
+                    CheckCableWarning.IsChecked = false;
+                    SaveSettings();
+                }
+            }
+        }
+
+        private void StartDevicePolling()
+        {
+            _devicePollTimer = new DispatcherTimer();
+            _devicePollTimer.Interval = TimeSpan.FromSeconds(3);
+            _devicePollTimer.Tick += DevicePollTimer_Tick;
+            _devicePollTimer.Start();
+        }
+
+        private void DevicePollTimer_Tick(object? sender, EventArgs e)
+        {
+            // Get fresh device list and compare
+            var list = new NativeMethods.OD_DeviceList();
+            list.Devices = new NativeMethods.OD_DeviceInfo[NativeMethods.OD_MAX_DEVICES];
+            try { NativeMethods.OD_Capture_EnumRenderDevices(ref list); } catch { return; }
+
+            var newIds = new List<string>();
+            for (int i = 0; i < list.Count; i++)
+                newIds.Add(list.Devices[i].Id ?? "");
+
+            // Check if device list changed
+            bool changed = newIds.Count != (_outputDeviceIds.Count - 1); // -1 for "Auto" entry
+            if (!changed)
+            {
+                for (int i = 0; i < newIds.Count; i++)
+                {
+                    if (i + 1 >= _outputDeviceIds.Count || newIds[i] != _outputDeviceIds[i + 1])
+                    { changed = true; break; }
+                }
+            }
+
+            if (changed)
+            {
+                string currentId = ComboOutputDevice.SelectedIndex > 0 && ComboOutputDevice.SelectedIndex < _outputDeviceIds.Count
+                    ? _outputDeviceIds[ComboOutputDevice.SelectedIndex] : "";
+
+                LoadOutputDevices();
+
+                // Try to re-select the previously selected device
+                if (!string.IsNullOrEmpty(currentId))
+                {
+                    int idx = _outputDeviceIds.IndexOf(currentId);
+                    if (idx >= 0)
+                    {
+                        _suppressDeviceChange = true;
+                        ComboOutputDevice.SelectedIndex = idx;
+                        _suppressDeviceChange = false;
+                        return;
+                    }
+                }
+
+                // Previous device disappeared or was Auto — auto-assign
+                if (!_userManuallySelected)
+                {
+                    AutoAssignOutputDevice();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Auto-select the best output device. Priority: Earphone/Headphone > Speaker > first available.
+        /// Skips CABLE/VB-Audio devices.
+        /// </summary>
+        private void AutoAssignOutputDevice()
+        {
+            _suppressDeviceChange = true;
+            int bestIdx = 0; // default to Auto
+            int speakerIdx = -1;
+
+            for (int i = 1; i < _outputDeviceNames.Count; i++)
+            {
+                string name = _outputDeviceNames[i].ToUpperInvariant();
+
+                // Skip virtual/cable devices
+                if (name.Contains("CABLE") || name.Contains("VB-AUDIO") || name.Contains("FXSOUND")) continue;
+
+                // Earphone/Headphone = highest priority — pick immediately
+                if (name.Contains("EARPHONE") || name.Contains("HEADPHONE") || name.Contains("HEADSET") || name.Contains("EARBUDS"))
+                {
+                    bestIdx = i;
+                    break;
+                }
+
+                // Speaker = fallback
+                if (speakerIdx < 0 && (name.Contains("SPEAKER") || name.Contains("REALTEK")))
+                {
+                    speakerIdx = i;
+                }
+            }
+
+            if (bestIdx == 0 && speakerIdx > 0) bestIdx = speakerIdx;
+
+            ComboOutputDevice.SelectedIndex = bestIdx;
+            _suppressDeviceChange = false;
         }
 
         private void InitializeNotifyIcon()
@@ -61,6 +196,7 @@ namespace OneDirectionCore
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
+            _devicePollTimer?.Stop();
             BtnStop_Click(null!, null!);
             SaveSettings();
             _notifyIcon?.Dispose();
@@ -82,6 +218,33 @@ namespace OneDirectionCore
             }
             catch { }
             ComboPorts.SelectedIndex = 0;
+        }
+
+        private void LoadOutputDevices()
+        {
+            _suppressDeviceChange = true;
+            ComboOutputDevice.Items.Clear();
+            _outputDeviceIds.Clear();
+            _outputDeviceNames.Clear();
+            ComboOutputDevice.Items.Add("Auto (first available)");
+            _outputDeviceIds.Add("");
+            _outputDeviceNames.Add("");
+            try
+            {
+                var list = new NativeMethods.OD_DeviceList();
+                list.Devices = new NativeMethods.OD_DeviceInfo[NativeMethods.OD_MAX_DEVICES];
+                NativeMethods.OD_Capture_EnumRenderDevices(ref list);
+                for (int i = 0; i < list.Count; i++)
+                {
+                    string name = list.Devices[i].Name ?? "Unknown";
+                    ComboOutputDevice.Items.Add(name);
+                    _outputDeviceIds.Add(list.Devices[i].Id ?? "");
+                    _outputDeviceNames.Add(name);
+                }
+            }
+            catch { }
+            ComboOutputDevice.SelectedIndex = 0;
+            _suppressDeviceChange = false;
         }
 
         private void LoadSettings()
@@ -118,6 +281,20 @@ namespace OneDirectionCore
                             case "min_to_tray": CheckTray.IsChecked = bool.Parse(value); break;
                             case "launch_startup": CheckStartup.IsChecked = bool.Parse(value); break;
                             case "smoothness": SliderSmoothness.Value = double.Parse(value); break;
+                            case "cable_setup_done":
+                                _cableSetupDone = bool.Parse(value);
+                                CheckCableWarning.IsChecked = !_cableSetupDone;
+                                break;
+                            case "output_device_idx":
+                                int idx = int.Parse(value);
+                                if (idx > 0 && idx < ComboOutputDevice.Items.Count)
+                                {
+                                    _suppressDeviceChange = true;
+                                    ComboOutputDevice.SelectedIndex = idx;
+                                    _userManuallySelected = true;
+                                    _suppressDeviceChange = false;
+                                }
+                                break;
                         }
                     }
                 }
@@ -172,6 +349,8 @@ namespace OneDirectionCore
                     sw.WriteLine($"max_entities={SliderMaxEntities.Value}");
                     sw.WriteLine($"com_port={ComboPorts.Text}");
                     sw.WriteLine($"smoothness={SliderSmoothness.Value}");
+                    sw.WriteLine($"output_device_idx={ComboOutputDevice.SelectedIndex}");
+                    sw.WriteLine($"cable_setup_done={_cableSetupDone}");
                 }
             }
             catch { }
@@ -184,14 +363,23 @@ namespace OneDirectionCore
 
             SaveSettings();
 
-            int channels = 2;
-            if (ComboChannels.SelectedIndex == 1) channels = 6;
-            else if (ComboChannels.SelectedIndex == 2) channels = 8;
+            int channels = 8; // Always 7.1 surround
 
             string preset = ComboPreset.SelectedIndex == 1 ? "pubg" : "none";
 
             try
             {
+                // Set selected output device BEFORE Init
+                int devIdx = ComboOutputDevice.SelectedIndex;
+                if (devIdx >= 0 && devIdx < _outputDeviceIds.Count && !string.IsNullOrEmpty(_outputDeviceIds[devIdx]))
+                {
+                    NativeMethods.OD_Capture_SetRenderDeviceId(_outputDeviceIds[devIdx]);
+                }
+                else
+                {
+                    NativeMethods.OD_Capture_SetRenderDeviceId(null!);
+                }
+
                 int initResult = NativeMethods.OD_Capture_Init(channels);
                 if (initResult != 1)
                 {
@@ -298,6 +486,59 @@ namespace OneDirectionCore
         private void BtnCheckUpdates_Click(object sender, RoutedEventArgs e)
         {
             System.Windows.MessageBox.Show("You are running the latest version.", "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void ComboOutputDevice_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_suppressDeviceChange) return;
+
+            // User made a manual selection — disable auto-assign
+            _userManuallySelected = true;
+
+            if (_overlay == null) return; // Engine not running, just save the setting
+
+            // Auto-restart the engine with the new output device
+            BtnStop_Click(null!, null!);
+            BtnStart_Click(null!, null!);
+        }
+
+        private void BtnStereoOutput_Click(object sender, RoutedEventArgs e)
+        {
+            string deviceName = ComboOutputDevice.SelectedItem?.ToString() ?? "Auto";
+            System.Windows.MessageBox.Show(
+                $"Output is set to Stereo (2.0) on:\n\n🔊 {deviceName}\n\nAll 7.1 capture audio is automatically downmixed to stereo for your speakers/earphones.",
+                "Stereo Output Active",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+
+        private void BtnEnableCable_Click(object sender, RoutedEventArgs e)
+        {
+            // Open Sound Control Panel directly to the Recording tab
+            try
+            {
+                Process.Start(new ProcessStartInfo("rundll32.exe", "shell32.dll,Control_RunDLL mmsys.cpl,,1") { UseShellExecute = false });
+            }
+            catch { }
+
+            System.Windows.MessageBox.Show(
+                "To enable CABLE audio forwarding:\n\n" +
+                "1. In the Sound window → Recording tab\n" +
+                "2. Right-click 'CABLE Output' → Properties\n" +
+                "3. Go to the 'Listen' tab\n" +
+                "4. Check ✅ 'Listen to this device'\n" +
+                "5. Set 'Playback through this device' to your speakers\n" +
+                "6. Click OK\n\n" +
+                "This is a one-time setup. Audio will then flow through your speakers.",
+                "Enable CABLE Output",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+
+        private void CheckCableWarning_Changed(object sender, RoutedEventArgs e)
+        {
+            _cableSetupDone = !(CheckCableWarning.IsChecked == true);
+            SaveSettings();
         }
     }
 }
