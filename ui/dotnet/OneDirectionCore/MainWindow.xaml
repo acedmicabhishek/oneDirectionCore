@@ -456,6 +456,13 @@
                             </Grid>
                             <Slider x:Name="SliderSmoothness" Minimum="0" Maximum="50" Value="25" ValueChanged="SliderSmoothness_ValueChanged"  IsSnapToTickEnabled="True" TickFrequency="1"/>
                         </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="Fade Out Time" Grid.Column="0"/>
+                                <TextBlock x:Name="LblFadeOut" Text="2.0s" Grid.Column="1" Foreground="#00D2B4" FontWeight="Bold"/>
+                            </Grid>
+                            <Slider x:Name="SliderFadeOut" Minimum="1" Maximum="100" Value="20" ValueChanged="SliderFadeOut_ValueChanged" IsSnapToTickEnabled="True" TickFrequency="1"/>
+                        </StackPanel>
                     </Grid>
 
                 </StackPanel>
