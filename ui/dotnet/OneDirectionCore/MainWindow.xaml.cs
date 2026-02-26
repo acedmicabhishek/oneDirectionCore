@@ -26,7 +26,6 @@ namespace OneDirectionCore
         private List<string> _outputDeviceNames = new();
         private bool _suppressDeviceChange = false;
         private bool _userManuallySelected = false;
-        private bool _cableSetupDone = false;
         private DispatcherTimer? _devicePollTimer;
 
 
@@ -39,33 +38,6 @@ namespace OneDirectionCore
             AutoAssignOutputDevice();
             LoadSettings();
             StartDevicePolling();
-            CheckFirstRun();
-        }
-
-        private void CheckFirstRun()
-        {
-            if (!_cableSetupDone)
-            {
-                var result = System.Windows.MessageBox.Show(
-                    "VB-Cable 'Listen to this device' must be enabled for audio to reach your speakers.\n\n" +
-                    "Would you like to open the setup guide now?\n\n" +
-                    "Click 'No' to disable this warning permanently.\n" +
-                    "(You can always use the ⚡ ENABLE CABLE button later)",
-                    "First-Time CABLE Setup",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-
-                if (result == MessageBoxResult.Yes)
-                {
-                    BtnEnableCable_Click(this, new RoutedEventArgs());
-                }
-                else
-                {
-                    _cableSetupDone = true;
-                    CheckCableWarning.IsChecked = false;
-                    SaveSettings();
-                }
-            }
         }
 
         private void StartDevicePolling()
@@ -281,10 +253,6 @@ namespace OneDirectionCore
                             case "min_to_tray": CheckTray.IsChecked = bool.Parse(value); break;
                             case "launch_startup": CheckStartup.IsChecked = bool.Parse(value); break;
                             case "smoothness": SliderSmoothness.Value = double.Parse(value); break;
-                            case "cable_setup_done":
-                                _cableSetupDone = bool.Parse(value);
-                                CheckCableWarning.IsChecked = !_cableSetupDone;
-                                break;
                             case "output_device_idx":
                                 int idx = int.Parse(value);
                                 if (idx > 0 && idx < ComboOutputDevice.Items.Count)
@@ -350,7 +318,6 @@ namespace OneDirectionCore
                     sw.WriteLine($"com_port={ComboPorts.Text}");
                     sw.WriteLine($"smoothness={SliderSmoothness.Value}");
                     sw.WriteLine($"output_device_idx={ComboOutputDevice.SelectedIndex}");
-                    sw.WriteLine($"cable_setup_done={_cableSetupDone}");
                 }
             }
             catch { }
@@ -510,35 +477,6 @@ namespace OneDirectionCore
                 "Stereo Output Active",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
-        }
-
-        private void BtnEnableCable_Click(object sender, RoutedEventArgs e)
-        {
-            // Open Sound Control Panel directly to the Recording tab
-            try
-            {
-                Process.Start(new ProcessStartInfo("rundll32.exe", "shell32.dll,Control_RunDLL mmsys.cpl,,1") { UseShellExecute = false });
-            }
-            catch { }
-
-            System.Windows.MessageBox.Show(
-                "To enable CABLE audio forwarding:\n\n" +
-                "1. In the Sound window → Recording tab\n" +
-                "2. Right-click 'CABLE Output' → Properties\n" +
-                "3. Go to the 'Listen' tab\n" +
-                "4. Check ✅ 'Listen to this device'\n" +
-                "5. Set 'Playback through this device' to your speakers\n" +
-                "6. Click OK\n\n" +
-                "This is a one-time setup. Audio will then flow through your speakers.",
-                "Enable CABLE Output",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }
-
-        private void CheckCableWarning_Changed(object sender, RoutedEventArgs e)
-        {
-            _cableSetupDone = !(CheckCableWarning.IsChecked == true);
-            SaveSettings();
         }
     }
 }

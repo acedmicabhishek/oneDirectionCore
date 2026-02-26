@@ -131,13 +131,19 @@ static DWORD WINAPI CaptureThreadProc(LPVOID lpParam) {
                                         for (UINT32 i = 0; i < numFrames; i++) {
                                             for (UINT32 c = 0; c < outChannels; c++) {
                                                 float sample = 0;
-                                                if (inChannels > outChannels && outChannels == 2) {
+                                                if (inChannels > 2) {
                                                     if (c == 0) { 
                                                         sample = latest_buffer.buffer[i * inChannels + 0];
-                                                        if (inChannels >= 6) sample = (sample + latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 4]) * 0.5f;
+                                                        if (inChannels >= 6) sample += latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 4];
+                                                        if (inChannels >= 8) sample += latest_buffer.buffer[i * inChannels + 6];
+                                                        sample *= 0.4f;
                                                     } else if (c == 1) { 
                                                         sample = latest_buffer.buffer[i * inChannels + 1];
-                                                        if (inChannels >= 6) sample = (sample + latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 5]) * 0.5f;
+                                                        if (inChannels >= 6) sample += latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 5];
+                                                        if (inChannels >= 8) sample += latest_buffer.buffer[i * inChannels + 7];
+                                                        sample *= 0.4f;
+                                                    } else {
+                                                        sample = 0.0f;
                                                     }
                                                 } else {
                                                     sample = (c < inChannels) ? latest_buffer.buffer[i * inChannels + c] : 0.0f;
@@ -152,13 +158,19 @@ static DWORD WINAPI CaptureThreadProc(LPVOID lpParam) {
                                         for (UINT32 i = 0; i < numFrames; i++) {
                                             for (UINT32 c = 0; c < outChannels; c++) {
                                                 float sample = 0;
-                                                if (inChannels > outChannels && outChannels == 2) {
+                                                if (inChannels > 2) {
                                                     if (c == 0) { 
                                                         sample = latest_buffer.buffer[i * inChannels + 0];
-                                                        if (inChannels >= 6) sample = (sample + latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 4]) * 0.5f;
+                                                        if (inChannels >= 6) sample += latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 4];
+                                                        if (inChannels >= 8) sample += latest_buffer.buffer[i * inChannels + 6];
+                                                        sample *= 0.4f;
                                                     } else if (c == 1) { 
                                                         sample = latest_buffer.buffer[i * inChannels + 1];
-                                                        if (inChannels >= 6) sample = (sample + latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 5]) * 0.5f;
+                                                        if (inChannels >= 6) sample += latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 5];
+                                                        if (inChannels >= 8) sample += latest_buffer.buffer[i * inChannels + 7];
+                                                        sample *= 0.4f;
+                                                    } else {
+                                                        sample = 0.0f;
                                                     }
                                                 } else {
                                                     sample = (c < inChannels) ? latest_buffer.buffer[i * inChannels + c] : 0.0f;
