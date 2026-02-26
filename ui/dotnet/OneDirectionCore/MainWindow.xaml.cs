@@ -253,6 +253,7 @@ namespace OneDirectionCore
                             case "min_to_tray": CheckTray.IsChecked = bool.Parse(value); break;
                             case "launch_startup": CheckStartup.IsChecked = bool.Parse(value); break;
                             case "smoothness": SliderSmoothness.Value = double.Parse(value); break;
+                            case "audio_boost": SliderAudioBoost.Value = double.Parse(value); break;
                             case "output_device_idx":
                                 int idx = int.Parse(value);
                                 if (idx > 0 && idx < ComboOutputDevice.Items.Count)
@@ -317,6 +318,7 @@ namespace OneDirectionCore
                     sw.WriteLine($"max_entities={SliderMaxEntities.Value}");
                     sw.WriteLine($"com_port={ComboPorts.Text}");
                     sw.WriteLine($"smoothness={SliderSmoothness.Value}");
+                    sw.WriteLine($"audio_boost={SliderAudioBoost.Value}");
                     sw.WriteLine($"output_device_idx={ComboOutputDevice.SelectedIndex}");
                 }
             }
@@ -369,7 +371,10 @@ namespace OneDirectionCore
                 int osdPos = ComboPosition.SelectedIndex;
                 bool fullscreen = CheckFullscreen.IsChecked == true;
                 double smoothness = SliderSmoothness.Value / 10.0;
+                float volumeMultiplier = (float)(SliderAudioBoost.Value / 100.0);
 
+                NativeMethods.OD_Capture_SetVolumeMultiplier(volumeMultiplier);
+                
                 _overlay = new OverlayWindow(sensitivity, separation, maxEntities, radarSize, globalOpacity, radarOpacity, dotOpacity, range, osdPos, fullscreen, smoothness);
                 _overlay.Show();
                 _overlay.StartEngine(pollRate);
@@ -449,6 +454,16 @@ namespace OneDirectionCore
 
         private void SliderSmoothness_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
             => LblSmoothness.Text = (e.NewValue / 10.0).ToString("F1");
+
+        private void SliderAudioBoost_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (LblAudioBoost != null) LblAudioBoost.Text = $"{(int)e.NewValue}%";
+            if (_overlay != null)
+            {
+                // Live update the core engine if running
+                NativeMethods.OD_Capture_SetVolumeMultiplier((float)(e.NewValue / 100.0));
+            }
+        }
 
         private void BtnCheckUpdates_Click(object sender, RoutedEventArgs e)
         {

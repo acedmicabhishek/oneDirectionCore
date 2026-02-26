@@ -100,6 +100,9 @@ namespace OneDirectionCore
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
         public static extern int OD_Capture_SetRenderDeviceId([MarshalAs(UnmanagedType.LPWStr)] string deviceId);
 
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void OD_Capture_SetVolumeMultiplier(float multiplier);
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
         public static extern int OD_Capture_SetCaptureDeviceByName([MarshalAs(UnmanagedType.LPWStr)] string substringMatch);
 

@@ -34,6 +34,11 @@ static UINT32 renderBufferFrameCount = 0;
 
 static wchar_t g_renderDeviceId[OD_DEVICE_MAX_ID] = {0};
 static wchar_t g_captureDeviceId[OD_DEVICE_MAX_ID] = {0};
+static float g_volume_multiplier = 2.0f;
+
+void OD_Capture_SetVolumeMultiplier(float multiplier) {
+    g_volume_multiplier = multiplier;
+}
 
 static void GetDeviceFriendlyName(IMMDevice *dev, wchar_t *outName, int maxLen) {
     outName[0] = L'\0';
@@ -136,12 +141,12 @@ static DWORD WINAPI CaptureThreadProc(LPVOID lpParam) {
                                                         sample = latest_buffer.buffer[i * inChannels + 0];
                                                         if (inChannels >= 6) sample += latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 4];
                                                         if (inChannels >= 8) sample += latest_buffer.buffer[i * inChannels + 6];
-                                                        sample *= 0.4f;
+                                                        sample *= (0.4f * g_volume_multiplier);
                                                     } else if (c == 1) { 
                                                         sample = latest_buffer.buffer[i * inChannels + 1];
                                                         if (inChannels >= 6) sample += latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 5];
                                                         if (inChannels >= 8) sample += latest_buffer.buffer[i * inChannels + 7];
-                                                        sample *= 0.4f;
+                                                        sample *= (0.4f * g_volume_multiplier);
                                                     } else {
                                                         sample = 0.0f;
                                                     }
@@ -163,12 +168,12 @@ static DWORD WINAPI CaptureThreadProc(LPVOID lpParam) {
                                                         sample = latest_buffer.buffer[i * inChannels + 0];
                                                         if (inChannels >= 6) sample += latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 4];
                                                         if (inChannels >= 8) sample += latest_buffer.buffer[i * inChannels + 6];
-                                                        sample *= 0.4f;
+                                                        sample *= (0.4f * g_volume_multiplier);
                                                     } else if (c == 1) { 
                                                         sample = latest_buffer.buffer[i * inChannels + 1];
                                                         if (inChannels >= 6) sample += latest_buffer.buffer[i * inChannels + 2] * 0.707f + latest_buffer.buffer[i * inChannels + 5];
                                                         if (inChannels >= 8) sample += latest_buffer.buffer[i * inChannels + 7];
-                                                        sample *= 0.4f;
+                                                        sample *= (0.4f * g_volume_multiplier);
                                                     } else {
                                                         sample = 0.0f;
                                                     }

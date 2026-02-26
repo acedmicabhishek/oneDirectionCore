@@ -38,6 +38,7 @@ __declspec(dllexport) AudioBuffer_t* OD_Capture_GetLatestBuffer(void);
 
 __declspec(dllexport) int OD_Capture_EnumRenderDevices(OD_DeviceList* outList);
 __declspec(dllexport) int OD_Capture_SetRenderDeviceId(const wchar_t* deviceId);
+__declspec(dllexport) void OD_Capture_SetVolumeMultiplier(float multiplier);
 __declspec(dllexport) int OD_Capture_SetCaptureDeviceByName(const wchar_t* substringMatch);
 __declspec(dllexport) int OD_Capture_FindVBCable(wchar_t* outId, int maxLen);
 
