@@ -10,15 +10,43 @@
 
 /* ──────────────────── DFT helpers ──────────────────── */
 
+/* Goertzel: same |X(bin)|^2 / n as a direct DFT, without per-sample trig. */
 static float dft_bin_energy(const float* samples, uint32_t n, uint32_t bin, uint32_t total_bins) {
-    float real = 0.0f, imag = 0.0f;
-    float freq = (float)bin / (float)total_bins;
+    double coeff = 2.0 * cos(2.0 * 3.14159265358979323846 * (double)bin / (double)total_bins);
+    double s1 = 0.0, s2 = 0.0;
     for (uint32_t i = 0; i < n; i++) {
-        float angle = 2.0f * PI * freq * (float)i;
-        real += samples[i] * cosf(angle);
-        imag += samples[i] * sinf(angle);
+        double s0 = (double)samples[i] + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
     }
-    return (real * real + imag * imag) / (float)n;
+    double power = s1 * s1 + s2 * s2 - coeff * s1 * s2;
+    if (power < 0.0) power = 0.0;
+    return (float)(power / (double)n);
+}
+
+/* Fold the candidate in entities[entity_count] into an existing entity within
+ * `separation` degrees, otherwise keep it as a new one. */
+static void merge_or_add(SpatialData_t* result, float separation) {
+    const SoundEntity_t* cand = &result->entities[result->entity_count];
+
+    for (int e = 0; e < result->entity_count; e++) {
+        float diff = result->entities[e].azimuth_angle - cand->azimuth_angle;
+        if (diff > 180.0f) diff -= 360.0f;
+        if (diff < -180.0f) diff += 360.0f;
+
+        if (fabsf(diff) < separation) {
+            /* Midpoint along the shorter arc, so 350 and 10 give 0, not 180. */
+            float mid = cand->azimuth_angle + diff * 0.5f;
+            if (mid < 0.0f) mid += 360.0f;
+            if (mid >= 360.0f) mid -= 360.0f;
+            result->entities[e].azimuth_angle = mid;
+            if (cand->distance < result->entities[e].distance)
+                result->entities[e].distance = cand->distance;
+            return;
+        }
+    }
+
+    result->entity_count++;
 }
 
 static float channel_energy(const float* interleaved, uint32_t num_frames, uint32_t total_channels, uint32_t ch_idx) {
@@ -233,24 +261,7 @@ SpatialData_t OD_DSP_ProcessBuffer(const AudioBuffer_t* buffer, float sensitivit
             entity->signature_match_id = band;
             entity->sound_type = class_result.type;
 
-            bool merged = false;
-            for (int e = 0; e < result.entity_count; e++) {
-                float diff = result.entities[e].azimuth_angle - azimuth;
-                if (diff > 180.0f) diff -= 360.0f;
-                if (diff < -180.0f) diff += 360.0f;
-
-                if (fabsf(diff) < separation) {
-                    result.entities[e].azimuth_angle = (result.entities[e].azimuth_angle + azimuth) * 0.5f;
-                    if (distance < result.entities[e].distance)
-                        result.entities[e].distance = distance;
-                    merged = true;
-                    break;
-                }
-            }
-
-            if (!merged) {
-                result.entity_count++;
-            }
+            merge_or_add(&result, separation);
         }
 
         return result;
@@ -297,24 +308,7 @@ SpatialData_t OD_DSP_ProcessBuffer(const AudioBuffer_t* buffer, float sensitivit
         entity->signature_match_id = band;
         entity->sound_type = class_result.type;
 
-        bool merged = false;
-        for (int e = 0; e < result.entity_count; e++) {
-            float diff = result.entities[e].azimuth_angle - azimuth;
-            if (diff > 180.0f) diff -= 360.0f;
-            if (diff < -180.0f) diff += 360.0f;
-
-            if (fabsf(diff) < separation) {
-                result.entities[e].azimuth_angle = (result.entities[e].azimuth_angle + azimuth) * 0.5f;
-                if (distance < result.entities[e].distance)
-                    result.entities[e].distance = distance;
-                merged = true;
-                break;
-            }
-        }
-
-        if (!merged) {
-            result.entity_count++;
-        }
+        merge_or_add(&result, separation);
     }
 
     return result;

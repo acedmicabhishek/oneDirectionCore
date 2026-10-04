@@ -5,6 +5,7 @@ bin/
 obj/
 *.exe
 !ODC.exe
+!Download/ODC-Setup.exe
 *.dll
 *.so
 *.dylib

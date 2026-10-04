@@ -4,9 +4,5 @@
         Title="oneDirectionCore Overlay" Height="1080" Width="1920"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" IsHitTestVisible="False">
-    
-    <!-- Root Canvas so Canvas.SetLeft/SetTop works on RadarCanvas -->
-    <Canvas x:Name="RootCanvas">
-        <Canvas x:Name="RadarCanvas"/>
-    </Canvas>
+    <!-- Content is a RadarSurface created in code-behind. -->
 </Window>

@@ -1,21 +1,19 @@
 using System;
-using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using Color = System.Windows.Media.Color;
 using Brush = System.Windows.Media.Brush;
+using Pen = System.Windows.Media.Pen;
 using Point = System.Windows.Point;
-using Rectangle = System.Windows.Shapes.Rectangle;
-using Ellipse = System.Windows.Shapes.Ellipse;
-using Line = System.Windows.Shapes.Line;
-using Polygon = System.Windows.Shapes.Polygon;
 using Brushes = System.Windows.Media.Brushes;
+using FlowDirection = System.Windows.FlowDirection;
 
 namespace OneDirectionCore
 {
@@ -29,12 +27,13 @@ namespace OneDirectionCore
         private double _radarOpacity;
         private double _dotOpacity;
         private double _zoom;
-        private int _osdPosition; 
+        private int _osdPosition;
         private bool _fullscreen;
         private double _smoothness;
 
         private float _sweepAngle = 0.0f;
-        private DateTime _lastFrameTime = DateTime.Now;
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        private double _lastFrameSeconds;
 
         private class BlipState
         {
@@ -47,14 +46,42 @@ namespace OneDirectionCore
         private const int MaxBlips = 10;
         private readonly BlipState[] _blips = Enumerable.Range(0, MaxBlips).Select(_ => new BlipState { Distance = 0.5f }).ToArray();
 
-        
+
         private readonly Color _themeTeal = Color.FromRgb(0, 220, 180);
-        private readonly Color _themeBackground = Color.FromRgb(10, 15, 25);
+
+        // Static radar chrome; opacity is fixed for the window's lifetime, so these are built once.
+        private readonly Brush _backgroundBrush;
+        private readonly Brush _labelBrush;
+        private readonly Pen _outerRingPen;
+        private readonly Pen _innerRingPen;
+        private readonly Pen _axisPen;
+        private readonly Pen _sweepPen;
+        private readonly Pen _crosshairPen;
+        private FormattedText? _labelF, _labelR, _labelL;
+
+        private sealed class RadarSurface : FrameworkElement
+        {
+            public Action<DrawingContext>? Paint;
+            protected override void OnRender(DrawingContext dc) => Paint?.Invoke(dc);
+        }
+
+        private readonly RadarSurface _surface = new RadarSurface();
+
+        // Engine thread: polls the capture buffer and runs the DSP at the configured rate.
+        private Thread? _engineThread;
+        private volatile bool _engineRunning;
+        private readonly object _dataLock = new object();
+        private NativeMethods.SpatialData _latestData;
+
+        /// <summary>Raised on the UI thread when the audio device was unplugged or the default device changed.</summary>
+        public event Action<OverlayWindow>? DeviceLost;
 
         // WinAPI constants for click-through
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_TRANSPARENT = 0x00000020;
+        private const int WS_EX_TOOLWINDOW = 0x00000080;
         private const int WS_EX_LAYERED    = 0x00080000;
+        private const int WS_EX_NOACTIVATE = 0x08000000;
 
         [DllImport("user32.dll")]
         private static extern int GetWindowLong(IntPtr hwnd, int index);
@@ -62,10 +89,29 @@ namespace OneDirectionCore
         [DllImport("user32.dll")]
         private static extern int SetWindowLong(IntPtr hwnd, int index, int newStyle);
 
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOACTIVATE = 0x0010;
+
+        // A game that marks its own window topmost when it takes focus ends up above the overlay,
+        // so the overlay is moved back to the top of the topmost band once a second.
+        private IntPtr _hwnd;
+        private readonly DispatcherTimer _topmostTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+
+        [DllImport("winmm.dll")]
+        private static extern uint timeBeginPeriod(uint period);
+
+        [DllImport("winmm.dll")]
+        private static extern uint timeEndPeriod(uint period);
+
         public OverlayWindow(double sensitivity, double separation, int maxEntities, double radarSize, double globalOpacity, double radarOpacity, double dotOpacity, double range, int osdPos, bool fullscreen, double smoothness)
         {
             InitializeComponent();
-            
+
             _sensitivity = sensitivity / 100.0;
             _separation = 60.0 - (separation * 0.55);
             _maxEntities = maxEntities;
@@ -78,6 +124,15 @@ namespace OneDirectionCore
             _fullscreen = fullscreen;
             _smoothness = smoothness;
 
+            double chrome = _globalOpacity * _radarOpacity;
+            _backgroundBrush = Frozen(new SolidColorBrush(Color.FromArgb((byte)(chrome * 200), 10, 15, 25)));
+            _labelBrush = Frozen(new SolidColorBrush(Color.FromArgb((byte)(chrome * 128), 255, 255, 255)));
+            _outerRingPen = MakePen(_themeTeal, (byte)(chrome * 255), 2);
+            _innerRingPen = MakePen(_themeTeal, (byte)(chrome * 51), 1);
+            _axisPen = MakePen(_themeTeal, (byte)(chrome * 38), 1);
+            _sweepPen = MakePen(_themeTeal, (byte)(chrome * 76), 1);
+            _crosshairPen = MakePen(Colors.White, 38, 1);
+
             this.WindowState = WindowState.Maximized;
             this.Background = Brushes.Transparent;
             this.AllowsTransparency = true;
@@ -86,44 +141,127 @@ namespace OneDirectionCore
             this.ShowInTaskbar = false;
             this.IsHitTestVisible = false;
 
+            _surface.Paint = DrawHUD;
+            this.Content = _surface;
+
             CompositionTarget.Rendering += OnRendering;
         }
+
+        private static T Frozen<T>(T freezable) where T : Freezable
+        {
+            freezable.Freeze();
+            return freezable;
+        }
+
+        private static Pen MakePen(Color color, byte alpha, double thickness)
+            => Frozen(new Pen(new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B)), thickness));
 
         protected override void OnSourceInitialized(EventArgs e)
         {
             base.OnSourceInitialized(e);
-            // Apply WS_EX_TRANSPARENT so Windows ignores ALL mouse input on this window
+            // WS_EX_TRANSPARENT makes Windows ignore ALL mouse input on this window;
+            // NOACTIVATE/TOOLWINDOW keep it from stealing focus from the game or showing in Alt+Tab.
             var hwnd = new WindowInteropHelper(this).Handle;
             int style = GetWindowLong(hwnd, GWL_EXSTYLE);
-            SetWindowLong(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT);
+            SetWindowLong(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+
+            _hwnd = hwnd;
+            _topmostTimer.Tick += (s, args) => SetWindowPos(_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            _topmostTimer.Start();
         }
 
-        public void StartEngine(int pollRate)
+        public void StartEngine(int pollRate, bool hardwareEnabled)
         {
-            
+            if (_engineThread != null) return;
+            if (pollRate < 1) pollRate = 60;
+
+            _engineRunning = true;
+            _engineThread = new Thread(() => EngineLoop(pollRate, hardwareEnabled))
+            {
+                IsBackground = true,
+                Name = "ODC Engine"
+            };
+            _engineThread.Start();
         }
 
         public void StopEngine()
         {
             CompositionTarget.Rendering -= OnRendering;
-            RadarCanvas.Children.Clear();
+            _topmostTimer.Stop();
+
+            _engineRunning = false;
+            if (_engineThread != null)
+            {
+                // Must finish before the caller tears down the native capture buffers.
+                _engineThread.Join();
+                _engineThread = null;
+            }
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            StopEngine();
+            base.OnClosed(e);
+        }
+
+        private void EngineLoop(int pollRate, bool hardwareEnabled)
+        {
+            // Default timer granularity (~15.6 ms) would cap the loop near 64 Hz.
+            timeBeginPeriod(1);
+            try
+            {
+                var timer = Stopwatch.StartNew();
+                double interval = 1.0 / pollRate;
+                double next = 0.0;
+                float sensitivity = (float)_sensitivity;
+                float separation = (float)_separation;
+
+                while (_engineRunning)
+                {
+                    if (NativeMethods.OD_Capture_IsDeviceLost() != 0)
+                    {
+                        Dispatcher.BeginInvoke(new Action(() => DeviceLost?.Invoke(this)));
+                        break;
+                    }
+
+                    NativeMethods.SpatialData data = default;
+                    IntPtr bufferPtr = NativeMethods.OD_Capture_GetLatestBuffer();
+                    if (bufferPtr != IntPtr.Zero)
+                    {
+                        data = NativeMethods.OD_DSP_ProcessBuffer(bufferPtr, sensitivity, separation);
+                    }
+
+                    lock (_dataLock) _latestData = data;
+
+                    if (hardwareEnabled && data.EntityCount > 0)
+                    {
+                        NativeMethods.OD_Hardware_SendDirectionLog(data.E0.AzimuthAngle);
+                    }
+
+                    next += interval;
+                    double wait = next - timer.Elapsed.TotalSeconds;
+                    if (wait > 0) Thread.Sleep(TimeSpan.FromSeconds(wait));
+                    else next = timer.Elapsed.TotalSeconds;
+                }
+            }
+            finally
+            {
+                timeEndPeriod(1);
+            }
         }
 
         private void OnRendering(object? sender, EventArgs e)
         {
-            DateTime now = DateTime.Now;
-            double dt = (now - _lastFrameTime).TotalSeconds;
-            _lastFrameTime = now;
+            double now = _clock.Elapsed.TotalSeconds;
+            double dt = now - _lastFrameSeconds;
+            _lastFrameSeconds = now;
+            if (dt > 0.1) dt = 0.1;
 
-            IntPtr bufferPtr = NativeMethods.OD_Capture_GetLatestBuffer();
-            NativeMethods.SpatialData data = default;
-            if (bufferPtr != IntPtr.Zero)
-            {
-                data = NativeMethods.OD_DSP_ProcessBuffer(bufferPtr, (float)_sensitivity, (float)_separation);
-            }
+            NativeMethods.SpatialData data;
+            lock (_dataLock) data = _latestData;
 
             UpdateLogic(data, (float)dt);
-            DrawHUD();
+            _surface.InvalidateVisual();
         }
 
         private void UpdateLogic(NativeMethods.SpatialData data, float dt)
@@ -135,6 +273,7 @@ namespace OneDirectionCore
 
             // Smoothness: 0 = snappy (lerpSpeed=20), 5 = very smooth (lerpSpeed=1)
             float lerpSpeed = (float)(20.0 / (1.0 + _smoothness * 3.8));
+            float lerp = Math.Min(1.0f, dt * lerpSpeed);
 
             for (int i = 0; i < MaxBlips; i++)
             {
@@ -143,14 +282,23 @@ namespace OneDirectionCore
                     float targetAz = entities[i].AzimuthAngle;
                     float targetDist = entities[i].Distance;
 
-                    float diff = targetAz - _blips[i].Azimuth;
-                    if (diff > 180.0f) diff -= 360.0f;
-                    if (diff < -180.0f) diff += 360.0f;
-                    _blips[i].Azimuth += diff * dt * lerpSpeed;
-                    if (_blips[i].Azimuth < 0) _blips[i].Azimuth += 360.0f;
-                    if (_blips[i].Azimuth >= 360.0f) _blips[i].Azimuth -= 360.0f;
+                    if (_blips[i].Alpha <= 0.01f)
+                    {
+                        // A blip that had faded out appears in place instead of sliding in from its stale position.
+                        _blips[i].Azimuth = targetAz;
+                        _blips[i].Distance = targetDist;
+                    }
+                    else
+                    {
+                        float diff = targetAz - _blips[i].Azimuth;
+                        if (diff > 180.0f) diff -= 360.0f;
+                        if (diff < -180.0f) diff += 360.0f;
+                        _blips[i].Azimuth += diff * lerp;
+                        if (_blips[i].Azimuth < 0) _blips[i].Azimuth += 360.0f;
+                        if (_blips[i].Azimuth >= 360.0f) _blips[i].Azimuth -= 360.0f;
 
-                    _blips[i].Distance += (targetDist - _blips[i].Distance) * dt * lerpSpeed;
+                        _blips[i].Distance += (targetDist - _blips[i].Distance) * lerp;
+                    }
                     _blips[i].Alpha = 1.0f;
                     _blips[i].Type = entities[i].SoundType;
                 }
@@ -166,34 +314,26 @@ namespace OneDirectionCore
             if (_sweepAngle >= 360.0f) _sweepAngle -= 360.0f;
         }
 
-        private void DrawHUD()
+        private void DrawHUD(DrawingContext dc)
         {
-            RadarCanvas.Children.Clear();
-
             double width = _radarSize;
             double height = _radarSize;
             double half = width / 2.0;
             double radius = (_fullscreen ? (this.ActualHeight * 0.45) : (half - 15.0));
 
-            double cx = _fullscreen ? (this.ActualWidth / 2.0) : half;
-            double cy = _fullscreen ? (this.ActualHeight / 2.0) : half;
-
-            if (_fullscreen)
-            {
-                width = this.ActualWidth;
-                height = this.ActualHeight;
-            }
+            double cx = this.ActualWidth / 2.0;
+            double cy = this.ActualHeight / 2.0;
 
             if (!_fullscreen)
             {
-                double margin = 40.0; 
+                double margin = 40.0;
                 double px, py;
-                
-                
+
+
                 double screenW = this.ActualWidth;
                 double screenH = this.ActualHeight;
 
-                if (screenW < 300 || screenH < 300) return; 
+                if (screenW < 300 || screenH < 300) return;
 
                 switch (_osdPosition) {
                     case 0: px = margin; py = margin; break;
@@ -204,44 +344,42 @@ namespace OneDirectionCore
                     case 5: px = screenW - width - margin; py = screenH - height - margin; break;
                     default: px = (screenW - width) / 2.0; py = margin; break;
                 }
-                Canvas.SetLeft(RadarCanvas, px);
-                Canvas.SetTop(RadarCanvas, py);
+                cx = px + half;
+                cy = py + half;
+                Point center = new Point(cx, cy);
 
-                
-                Ellipse bg = new Ellipse {
-                    Width = radius * 2 + 10, Height = radius * 2 + 10,
-                    Fill = new SolidColorBrush(Color.FromArgb((byte)(_globalOpacity * _radarOpacity * 200), 10, 15, 25)),
-                };
-                Canvas.SetLeft(bg, cx - (radius + 5));
-                Canvas.SetTop(bg, cy - (radius + 5));
-                RadarCanvas.Children.Add(bg);
 
-                
-                DrawCircle(cx, cy, radius, _themeTeal, (byte)(_globalOpacity * _radarOpacity * 255), 2);
-                DrawCircle(cx, cy, radius * 0.66, _themeTeal, (byte)(_globalOpacity * _radarOpacity * 51), 1);
-                DrawCircle(cx, cy, radius * 0.33, _themeTeal, (byte)(_globalOpacity * _radarOpacity * 51), 1);
+                dc.DrawEllipse(_backgroundBrush, null, center, radius + 5, radius + 5);
 
-                
-                DrawLine(cx - radius, cy, cx + radius, cy, _themeTeal, (byte)(_globalOpacity * _radarOpacity * 38));
-                DrawLine(cx, cy - radius, cx, cy + radius, _themeTeal, (byte)(_globalOpacity * _radarOpacity * 38));
 
-                
-                DrawText("F", cx - 4, cy - radius - 18, 12, (byte)(_globalOpacity * _radarOpacity * 128));
-                DrawText("R", cx + radius + 6, cy - 8, 12, (byte)(_globalOpacity * _radarOpacity * 128));
-                DrawText("L", cx - radius - 16, cy - 8, 12, (byte)(_globalOpacity * _radarOpacity * 128));
+                dc.DrawEllipse(null, _outerRingPen, center, radius, radius);
+                dc.DrawEllipse(null, _innerRingPen, center, radius * 0.66, radius * 0.66);
+                dc.DrawEllipse(null, _innerRingPen, center, radius * 0.33, radius * 0.33);
 
-                
+
+                dc.DrawLine(_axisPen, new Point(cx - radius, cy), new Point(cx + radius, cy));
+                dc.DrawLine(_axisPen, new Point(cx, cy - radius), new Point(cx, cy + radius));
+
+
+                _labelF ??= MakeLabel("F");
+                _labelR ??= MakeLabel("R");
+                _labelL ??= MakeLabel("L");
+                dc.DrawText(_labelF, new Point(cx - 4, cy - radius - 18));
+                dc.DrawText(_labelR, new Point(cx + radius + 6, cy - 8));
+                dc.DrawText(_labelL, new Point(cx - radius - 16, cy - 8));
+
+
                 double sr = (_sweepAngle - 90.0) * (Math.PI / 180.0);
-                DrawLine(cx, cy, cx + Math.Cos(sr) * radius, cy + Math.Sin(sr) * radius, _themeTeal, (byte)(_globalOpacity * _radarOpacity * 76));
+                dc.DrawLine(_sweepPen, center, new Point(cx + Math.Cos(sr) * radius, cy + Math.Sin(sr) * radius));
             }
             else
             {
-                
-                DrawLine(cx - 8, cy, cx + 8, cy, Colors.White, 38);
-                DrawLine(cx, cy - 8, cx, cy + 8, Colors.White, 38);
+
+                dc.DrawLine(_crosshairPen, new Point(cx - 8, cy), new Point(cx + 8, cy));
+                dc.DrawLine(_crosshairPen, new Point(cx, cy - 8), new Point(cx, cy + 8));
             }
 
-            
+
             for (int i = 0; i < MaxBlips; i++)
             {
                 if (_blips[i].Alpha < 0.01f) continue;
@@ -259,88 +397,58 @@ namespace OneDirectionCore
                 byte gCol = (byte)(255 * t);
                 Color blipColor = Color.FromRgb(rCol, gCol, 20);
 
-                
-                Ellipse glow = new Ellipse {
-                    Width = _fullscreen ? 44 : 24, Height = _fullscreen ? 44 : 24,
-                    Fill = new SolidColorBrush(Color.FromArgb((byte)(alpha * 0.15), rCol, gCol, 20))
-                };
-                Canvas.SetLeft(glow, bx - glow.Width/2);
-                Canvas.SetTop(glow, by - glow.Height/2);
-                RadarCanvas.Children.Add(glow);
 
-                
-                DrawBlipIcon(bx, by, _fullscreen ? 12 : 6, _blips[i].Type, blipColor, alpha);
+                double glowRadius = _fullscreen ? 22 : 12;
+                dc.DrawEllipse(new SolidColorBrush(Color.FromArgb((byte)(alpha * 0.15), rCol, gCol, 20)), null, new Point(bx, by), glowRadius, glowRadius);
+
+
+                DrawBlipIcon(dc, bx, by, _fullscreen ? 12 : 6, _blips[i].Type, blipColor, alpha);
             }
         }
 
-        private void DrawCircle(double x, double y, double r, Color color, byte alpha, double thickness)
+        private FormattedText MakeLabel(string text)
+            => new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                                 new Typeface("Segoe UI"), 12, _labelBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+
+        private static void DrawPolygon(DrawingContext dc, Brush brush, params Point[] points)
         {
-            Ellipse el = new Ellipse {
-                Width = r * 2, Height = r * 2,
-                Stroke = new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B)),
-                StrokeThickness = thickness
-            };
-            Canvas.SetLeft(el, x - r);
-            Canvas.SetTop(el, y - r);
-            RadarCanvas.Children.Add(el);
+            StreamGeometry geometry = new StreamGeometry();
+            using (StreamGeometryContext ctx = geometry.Open())
+            {
+                ctx.BeginFigure(points[0], true, true);
+                for (int i = 1; i < points.Length; i++) ctx.LineTo(points[i], false, false);
+            }
+            geometry.Freeze();
+            dc.DrawGeometry(brush, null, geometry);
         }
 
-        private void DrawLine(double x1, double y1, double x2, double y2, Color color, byte alpha)
-        {
-            Line line = new Line {
-                X1 = x1, Y1 = y1, X2 = x2, Y2 = y2,
-                Stroke = new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B)),
-                StrokeThickness = 1
-            };
-            RadarCanvas.Children.Add(line);
-        }
-
-        private void DrawText(string text, double x, double y, double size, byte alpha)
-        {
-            TextBlock tb = new TextBlock {
-                Text = text, FontSize = size,
-                Foreground = new SolidColorBrush(Color.FromArgb(alpha, 255, 255, 255))
-            };
-            Canvas.SetLeft(tb, x);
-            Canvas.SetTop(tb, y);
-            RadarCanvas.Children.Add(tb);
-        }
-
-        private void DrawBlipIcon(double x, double y, double size, int type, Color color, byte alpha)
+        private static void DrawBlipIcon(DrawingContext dc, double x, double y, double size, int type, Color color, byte alpha)
         {
             Brush brush = new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B));
-            
-            if (type == 1) 
+
+            if (type == 1)
             {
-                Polygon poly = new Polygon { Fill = brush };
                 double s = size;
-                poly.Points.Add(new Point(x - s * 0.4, y + s * 0.6));
-                poly.Points.Add(new Point(x + s * 0.4, y + s * 0.6));
-                poly.Points.Add(new Point(x + s * 0.6, y - s * 0.1));
-                poly.Points.Add(new Point(x + s * 0.2, y - s * 0.6));
-                poly.Points.Add(new Point(x - s * 0.2, y - s * 0.6));
-                poly.Points.Add(new Point(x - s * 0.6, y - s * 0.1));
-                RadarCanvas.Children.Add(poly);
+                DrawPolygon(dc, brush,
+                    new Point(x - s * 0.4, y + s * 0.6),
+                    new Point(x + s * 0.4, y + s * 0.6),
+                    new Point(x + s * 0.6, y - s * 0.1),
+                    new Point(x + s * 0.2, y - s * 0.6),
+                    new Point(x - s * 0.2, y - s * 0.6),
+                    new Point(x - s * 0.6, y - s * 0.1));
             }
-            else if (type == 2 || type == 3) 
+            else if (type == 2 || type == 3)
             {
-                Polygon tri = new Polygon { Fill = brush };
-                tri.Points.Add(new Point(x, y - size * 0.8));
-                tri.Points.Add(new Point(x - size * 0.6, y + size * 0.6));
-                tri.Points.Add(new Point(x + size * 0.6, y + size * 0.6));
-                RadarCanvas.Children.Add(tri);
-                
-                Rectangle stem = new Rectangle { Width = size * 0.4, Height = size * 0.3, Fill = brush };
-                Canvas.SetLeft(stem, x - size * 0.2);
-                Canvas.SetTop(stem, y + size * 0.6);
-                RadarCanvas.Children.Add(stem);
+                DrawPolygon(dc, brush,
+                    new Point(x, y - size * 0.8),
+                    new Point(x - size * 0.6, y + size * 0.6),
+                    new Point(x + size * 0.6, y + size * 0.6));
+
+                dc.DrawRectangle(brush, null, new Rect(x - size * 0.2, y + size * 0.6, size * 0.4, size * 0.3));
             }
-            else 
+            else
             {
-                Ellipse dot = new Ellipse { Width = size * 1.6, Height = size * 1.6, Fill = brush };
-                Canvas.SetLeft(dot, x - size * 0.8);
-                Canvas.SetTop(dot, y - size * 0.8);
-                RadarCanvas.Children.Add(dot);
+                dc.DrawEllipse(brush, null, new Point(x, y), size * 0.8, size * 0.8);
             }
         }
     }
