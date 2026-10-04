@@ -102,6 +102,13 @@ static const float ch_angle_6[] = {
     135.0f,  /*  5  BR / SR  */
 };
 
+/* Left/right weights for the classifier's stereo downmix: |sin| of each channel's angle,
+ * with the centre channel going to both sides. LFE is left out. */
+static const float mix_left_8[]  = { 0.70710678f, 0.0f, 0.707f, 0.0f, 0.70710678f, 0.0f, 1.0f, 0.0f };
+static const float mix_right_8[] = { 0.0f, 0.70710678f, 0.707f, 0.0f, 0.0f, 0.70710678f, 0.0f, 1.0f };
+static const float mix_left_6[]  = { 0.70710678f, 0.0f, 0.707f, 0.0f, 0.70710678f, 0.0f };
+static const float mix_right_6[] = { 0.0f, 0.70710678f, 0.707f, 0.0f, 0.0f, 0.70710678f };
+
 /* ──────────────────── Main DSP entry ──────────────────── */
 
 SpatialData_t OD_DSP_ProcessBuffer(const AudioBuffer_t* buffer, float sensitivity, float separation) {
@@ -116,50 +123,50 @@ SpatialData_t OD_DSP_ProcessBuffer(const AudioBuffer_t* buffer, float sensitivit
     if (n > FFT_SIZE) n = FFT_SIZE;
     uint32_t ch = buffer->channels;
 
-    /* ── Build a mono + left/right downmix for the classifier ── */
+    /* ── Left/right downmix ──
+     * Read by the classifier and by the stereo fallback. With surround input and the
+     * classifier off nothing uses it, so it is not built at all. */
+    int classify = OD_Classifier_IsEnabled();
+    int need_stereo = classify || ch < 6;
+
     float left[FFT_SIZE];
     float right[FFT_SIZE];
-    memset(left, 0, sizeof(left));
-    memset(right, 0, sizeof(right));
+    if (need_stereo) {
+        memset(left, 0, sizeof(left));
+        memset(right, 0, sizeof(right));
 
-    for (uint32_t i = 0; i < n; i++) {
         if (ch == 1) {
-            left[i] = buffer->buffer[i];
-            right[i] = buffer->buffer[i];
+            for (uint32_t i = 0; i < n; i++) left[i] = right[i] = buffer->buffer[i];
         } else if (ch == 2) {
-            left[i]  = buffer->buffer[i * 2 + 0];
-            right[i] = buffer->buffer[i * 2 + 1];
+            for (uint32_t i = 0; i < n; i++) {
+                left[i]  = buffer->buffer[i * 2 + 0];
+                right[i] = buffer->buffer[i * 2 + 1];
+            }
         } else {
             /* For multi-channel: simple stereo downmix for the classifier only */
-            float l = 0.0f, r = 0.0f;
-            for (uint32_t c = 0; c < ch; c++) {
-                float s = buffer->buffer[i * ch + c];
-                const float *angle_table = (ch >= 8) ? ch_angle_8 : ch_angle_6;
-                if (c < ((ch >= 8) ? 8u : 6u)) {
-                    float a = angle_table[c];
-                    if (a < 0.0f) continue; /* LFE */
-                    float rad = a * PI / 180.0f;
-                    /* negative sin → left contribution, positive sin → right */
-                    float lr_weight = sinf(rad);
-                    if (lr_weight < 0.0f)
-                        l += s * (-lr_weight);
-                    else
-                        r += s * lr_weight;
-                    /* center (sin≈0) contributes equally */
-                    if (fabsf(lr_weight) < 0.15f) {
-                        l += s * 0.707f;
-                        r += s * 0.707f;
-                    }
+            const float *wl = (ch >= 8) ? mix_left_8 : mix_left_6;
+            const float *wr = (ch >= 8) ? mix_right_8 : mix_right_6;
+            uint32_t dir = (ch >= 8) ? 8u : 6u;
+            if (dir > ch) dir = ch;
+            for (uint32_t i = 0; i < n; i++) {
+                float l = 0.0f, r = 0.0f;
+                for (uint32_t c = 0; c < dir; c++) {
+                    float s = buffer->buffer[i * ch + c];
+                    l += s * wl[c];
+                    r += s * wr[c];
                 }
+                left[i]  = l;
+                right[i] = r;
             }
-            left[i]  = l;
-            right[i] = r;
         }
     }
 
     /* Run classifier on the downmixed stereo */
-    SpectralFeatures_t features = OD_Classifier_ExtractFeatures(left, right, n, buffer->sample_rate);
-    ClassResult_t class_result = OD_Classifier_Classify(&features);
+    ClassResult_t class_result = { SOUND_UNKNOWN, 0.0f };
+    if (classify) {
+        SpectralFeatures_t features = OD_Classifier_ExtractFeatures(left, right, n, buffer->sample_rate);
+        class_result = OD_Classifier_Classify(&features);
+    }
 
     if (sensitivity < 0.01f) return result;
 
@@ -168,21 +175,23 @@ SpatialData_t OD_DSP_ProcessBuffer(const AudioBuffer_t* buffer, float sensitivit
     float threshold = max_thresh * powf(min_thresh / max_thresh, sensitivity);
 
     /* ── Diagnostic logging ── */
-    static float peak_energy = 0;
-    static int peak_counter = 0;
-    float current_max = 0;
-    for (uint32_t i = 0; i < n; i++) {
-        float e = left[i]*left[i] + right[i]*right[i];
-        if (e > current_max) current_max = e;
-    }
-    if (current_max > peak_energy) peak_energy = current_max;
-    if (++peak_counter >= 100) {
-        if (peak_energy > 0) {
-            printf("[DSP Windows] Peak Energy: %.6f, Threshold: %.6f, Ch: %u\n", peak_energy, threshold, ch);
-            fflush(stdout);
+    if (need_stereo) {
+        static float peak_energy = 0;
+        static int peak_counter = 0;
+        float current_max = 0;
+        for (uint32_t i = 0; i < n; i++) {
+            float e = left[i]*left[i] + right[i]*right[i];
+            if (e > current_max) current_max = e;
         }
-        peak_energy = 0;
-        peak_counter = 0;
+        if (current_max > peak_energy) peak_energy = current_max;
+        if (++peak_counter >= 100) {
+            if (peak_energy > 0) {
+                printf("[DSP Windows] Peak Energy: %.6f, Threshold: %.6f, Ch: %u\n", peak_energy, threshold, ch);
+                fflush(stdout);
+            }
+            peak_energy = 0;
+            peak_counter = 0;
+        }
     }
 
     /* ────────────────────────────────────────────────────────

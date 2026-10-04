@@ -43,6 +43,10 @@ void OD_Classifier_SetPreset(const char* preset_name) {
     }
 }
 
+int OD_Classifier_IsEnabled(void) {
+    return active_preset.enabled;
+}
+
 const char* OD_Classifier_TypeName(SoundType_t type) {
     if (type >= 0 && type < SOUND_TYPE_COUNT)
         return type_names[type];
@@ -62,15 +66,17 @@ static float band_energy(const float* samples, uint32_t n, float freq_low, float
     if (step > 8) step = step / 8;
     if (step < 1) step = 1;
 
+    /* Goertzel: same |X(bin)|^2 / n as a direct DFT, without per-sample trig. */
     for (uint32_t bin = bin_low; bin < bin_high; bin += step) {
-        float real = 0.0f, imag = 0.0f;
-        float freq = (float)bin / (float)n;
+        double coeff = 2.0 * cos(2.0 * 3.14159265358979323846 * (double)bin / (double)n);
+        double s1 = 0.0, s2 = 0.0;
         for (uint32_t i = 0; i < n; i++) {
-            float angle = 2.0f * PI * freq * (float)i;
-            real += samples[i] * cosf(angle);
-            imag += samples[i] * sinf(angle);
+            double s0 = (double)samples[i] + coeff * s1 - s2;
+            s2 = s1;
+            s1 = s0;
         }
-        energy += (real * real + imag * imag) / (float)n;
+        double power = s1 * s1 + s2 * s2 - coeff * s1 * s2;
+        if (power > 0.0) energy += (float)(power / (double)n);
     }
     return energy;
 }

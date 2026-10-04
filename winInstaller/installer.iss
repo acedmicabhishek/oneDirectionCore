@@ -4,7 +4,7 @@
 ;   ISCC.exe winInstaller\installer.iss
 ; The installer is written to Download\ODC-Setup.exe.
 #define MyAppName "OneDirectionCore"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 #define MyAppPublisher "OneDirection Team"
 #define MyAppExeName "OneDirectionCore.exe"
 #define PublishDir "..\ui\dotnet\OneDirectionCore\bin\Release\net10.0-windows\win-x64\publish"

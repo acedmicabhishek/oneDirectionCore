@@ -48,6 +48,8 @@ static volatile LONG device_channels = 0;
 static AudioBuffer_t latest_buffer = {0};
 static AudioBuffer_t ui_buffer = {0};
 static ULONGLONG last_packet_ms = 0;
+/* Bumped for every captured packet, so callers can tell whether the window changed. */
+static volatile LONG packet_sequence = 0;
 
 /* Loopback delivers no packets while nothing is playing; after this long the
  * window is treated as silence instead of being re-analysed forever. */
@@ -239,6 +241,7 @@ static void push_frames(const float *data, UINT32 frames) {
     }
     latest_buffer.num_samples = keep + count;
     last_packet_ms = GetTickCount64();
+    InterlockedIncrement(&packet_sequence);
 }
 
 /* Convert the device packet to float in the capture thread's scratch buffer. */
@@ -586,6 +589,10 @@ int OD_Capture_IsDeviceLost(void) {
 
 int OD_Capture_GetDeviceChannels(void) {
     return (int)device_channels;
+}
+
+int OD_Capture_GetSequence(void) {
+    return (int)packet_sequence;
 }
 
 AudioBuffer_t* OD_Capture_GetLatestBuffer(void) {

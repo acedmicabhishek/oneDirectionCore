@@ -26,7 +26,7 @@ Made for people with disabilities or hard of hearing to help them enjoy Compitit
 
 ## Download and use (Windows)
 
-1. Download [ODC-Setup.exe](Download/ODC-Setup.exe?raw=true) (Windows 10/11 x64, version 1.1.0) and run it. It installs for the current user, so it does not ask for administrator rights. Windows may show a SmartScreen warning because the installer is not code-signed; choose "More info" > "Run anyway".
+1. Download [ODC-Setup.exe](Download/ODC-Setup.exe?raw=true) (Windows 10/11 x64, version 1.1.1) and run it. It installs for the current user, so it does not ask for administrator rights. Windows may show a SmartScreen warning because the installer is not code-signed; choose "More info" > "Run anyway".
 2. Start **OneDirectionCore** from the Start Menu and press **START ENGINE**. The radar appears in the corner of the screen.
 3. In the game, set the display mode to **Fullscreen (Windowed)** or **Windowed**. In exclusive fullscreen no overlay can be drawn over the game.
 
@@ -41,6 +41,7 @@ Surround Mode, on by default, gets around this with a virtual 7.1 audio device:
 - Install [FxSound](https://www.fxsound.com/) once. Its driver provides the virtual 7.1 device. Other virtual playback devices that offer a 7.1 format should be picked up the same way, but only FxSound has been tested.
 - When the engine starts, ODC switches that device to 7.1 and makes it the default, so the game renders all eight channels into it. The radar reads those channels.
 - ODC plays a stereo mix of the same audio on your real headphones or speakers, and the volume keys keep working. **Listen On** in Advanced picks the device if the automatic choice is wrong.
+- If you plug in headphones or switch the Windows sound output while the engine is running, ODC moves the sound to that device and keeps the radar going. There is no need to restart it.
 - When the engine stops, the previous audio settings are put back.
 
 The FxSound app forces its device to stereo, so ODC closes that app while the engine runs and starts it again afterwards.

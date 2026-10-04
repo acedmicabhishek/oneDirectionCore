@@ -43,6 +43,8 @@ typedef struct {
 
 __declspec(dllexport) void OD_Classifier_Init(void);
 __declspec(dllexport) void OD_Classifier_SetPreset(const char* preset_name);
+/* Non-zero when a preset is active; feature extraction is only worth running then. */
+__declspec(dllexport) int OD_Classifier_IsEnabled(void);
 __declspec(dllexport) SpectralFeatures_t OD_Classifier_ExtractFeatures(const float* left, const float* right, uint32_t num_samples, uint32_t sample_rate);
 __declspec(dllexport) ClassResult_t OD_Classifier_Classify(const SpectralFeatures_t* features);
 __declspec(dllexport) const char* OD_Classifier_TypeName(SoundType_t type);

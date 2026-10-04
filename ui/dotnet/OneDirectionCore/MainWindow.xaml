@@ -274,7 +274,7 @@
         <Grid Grid.Row="0">
             <StackPanel>
                 <TextBlock Text="ODC" FontSize="28" FontWeight="Bold" Foreground="White" Margin="0,0,0,2"/>
-                <TextBlock Text="Build Version V_1.1" Foreground="#555555" FontSize="11" Margin="0,0,0,5"/>
+                <TextBlock Text="Build Version V_1.1.1" Foreground="#555555" FontSize="11" Margin="0,0,0,5"/>
             </StackPanel>
             <Border HorizontalAlignment="Right" VerticalAlignment="Center" Background="#1C1C1C" BorderBrush="#333333" BorderThickness="1" CornerRadius="4" Padding="2">
                 <StackPanel Orientation="Horizontal">
@@ -363,7 +363,7 @@
                                   ToolTip="Makes the game output 7.1 through a virtual audio device so sounds behind you can be shown, while you keep hearing stereo."/>
                         <StackPanel Grid.Column="2">
                             <TextBlock Text="Listen On" Margin="0,0,0,5"/>
-                            <ComboBox x:Name="ComboListen" Margin="0"/>
+                            <ComboBox x:Name="ComboListen" Margin="0" DropDownOpened="ComboListen_DropDownOpened"/>
                         </StackPanel>
                     </Grid>
 

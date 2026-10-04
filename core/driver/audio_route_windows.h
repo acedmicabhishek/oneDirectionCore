@@ -20,8 +20,14 @@ extern "C" {
 #define OD_ROUTE_NATIVE      1  /* the default device is already surround: capture it as is */
 #define OD_ROUTE_VIRTUAL     2  /* routed: capture OD_Route_CaptureId, forward to OD_Route_OutputId */
 
-/* preferred_output_name: friendly name of the device to listen on, or NULL/empty for automatic. */
+/* preferred_output_name: friendly name of the device to listen on, or NULL/empty for automatic.
+ * Calling it again while routed re-evaluates the route in place: a real device that has become
+ * the Windows default is taken as the new device to listen on. */
 __declspec(dllexport) int OD_Route_Prepare(const wchar_t* preferred_output_name);
+/* Non-zero when the route no longer matches the system: the Windows output was switched away
+ * from the virtual device, or headphones were plugged in. Stop capture and call
+ * OD_Route_Prepare again. Cheap enough to poll about once a second. */
+__declspec(dllexport) int OD_Route_NeedsUpdate(void);
 /* Undo what OD_Route_Prepare changed (device format, default device). Safe to call when nothing is routed. */
 __declspec(dllexport) void OD_Route_Restore(void);
 /* Same, from values saved to disk, for recovering after a crash while routed. */
