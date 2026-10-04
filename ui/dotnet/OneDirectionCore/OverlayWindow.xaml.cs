@@ -67,6 +67,12 @@ namespace OneDirectionCore
 
         private readonly RadarSurface _surface = new RadarSurface();
 
+        // The radar is redrawn at a fixed 30 fps instead of the monitor's refresh rate: on a
+        // 144 Hz screen that is a fifth of the work, and nothing on a radar moves fast enough to show it.
+        private readonly DispatcherTimer _frameTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromSeconds(1.0 / 30.0) };
+        // Space around the radar square for its edge labels.
+        private const double WindowPad = 8.0;
+
         // Engine thread: polls the capture buffer and runs the DSP at the configured rate.
         private Thread? _engineThread;
         private volatile bool _engineRunning;
@@ -133,7 +139,8 @@ namespace OneDirectionCore
             _sweepPen = MakePen(_themeTeal, (byte)(chrome * 76), 1);
             _crosshairPen = MakePen(Colors.White, 38, 1);
 
-            this.WindowState = WindowState.Maximized;
+            if (_fullscreen) this.WindowState = WindowState.Maximized;
+            else PlaceRadarWindow();
             this.Background = Brushes.Transparent;
             this.AllowsTransparency = true;
             this.WindowStyle = WindowStyle.None;
@@ -144,7 +151,36 @@ namespace OneDirectionCore
             _surface.Paint = DrawHUD;
             this.Content = _surface;
 
-            CompositionTarget.Rendering += OnRendering;
+            _frameTimer.Tick += OnFrame;
+            _frameTimer.Start();
+        }
+
+        // In radar mode the window is only as large as the radar. A full-screen transparent
+        // window makes Windows blend the whole screen over the game on every frame.
+        private void PlaceRadarWindow()
+        {
+            double screenW = SystemParameters.PrimaryScreenWidth;
+            double screenH = SystemParameters.PrimaryScreenHeight;
+            double size = _radarSize;
+            double margin = 40.0;
+            double px, py;
+
+            switch (_osdPosition) {
+                case 0: px = margin; py = margin; break;
+                case 1: px = (screenW - size) / 2.0; py = margin; break;
+                case 2: px = screenW - size - margin; py = margin; break;
+                case 3: px = margin; py = screenH - size - margin; break;
+                case 4: px = (screenW - size) / 2.0; py = screenH - size - margin; break;
+                case 5: px = screenW - size - margin; py = screenH - size - margin; break;
+                default: px = (screenW - size) / 2.0; py = margin; break;
+            }
+
+            this.WindowStartupLocation = WindowStartupLocation.Manual;
+            this.WindowState = WindowState.Normal;
+            this.Left = px - WindowPad;
+            this.Top = py - WindowPad;
+            this.Width = size + WindowPad * 2;
+            this.Height = size + WindowPad * 2;
         }
 
         private static T Frozen<T>(T freezable) where T : Freezable
@@ -186,7 +222,7 @@ namespace OneDirectionCore
 
         public void StopEngine()
         {
-            CompositionTarget.Rendering -= OnRendering;
+            _frameTimer.Stop();
             _topmostTimer.Stop();
 
             _engineRunning = false;
@@ -216,6 +252,10 @@ namespace OneDirectionCore
                 float sensitivity = (float)_sensitivity;
                 float separation = (float)_separation;
 
+                int analysedSequence = -1;
+                bool showing = false;
+                double nextRouteCheck = 1.0;
+
                 while (_engineRunning)
                 {
                     if (NativeMethods.OD_Capture_IsDeviceLost() != 0)
@@ -224,18 +264,42 @@ namespace OneDirectionCore
                         break;
                     }
 
-                    NativeMethods.SpatialData data = default;
-                    IntPtr bufferPtr = NativeMethods.OD_Capture_GetLatestBuffer();
-                    if (bufferPtr != IntPtr.Zero)
+                    // Headphones plugged in, or the Windows output switched: the surround route has to follow.
+                    if (timer.Elapsed.TotalSeconds >= nextRouteCheck)
                     {
-                        data = NativeMethods.OD_DSP_ProcessBuffer(bufferPtr, sensitivity, separation);
+                        nextRouteCheck = timer.Elapsed.TotalSeconds + 1.0;
+                        if (NativeMethods.OD_Route_NeedsUpdate() != 0)
+                        {
+                            Dispatcher.BeginInvoke(new Action(() => DeviceLost?.Invoke(this)));
+                            break;
+                        }
                     }
 
-                    lock (_dataLock) _latestData = data;
+                    // Read before fetching the buffer, so the buffer is never older than the number.
+                    int sequence = NativeMethods.OD_Capture_GetSequence();
+                    IntPtr bufferPtr = NativeMethods.OD_Capture_GetLatestBuffer();
 
-                    if (hardwareEnabled && data.EntityCount > 0)
+                    if (bufferPtr == IntPtr.Zero)
                     {
-                        NativeMethods.OD_Hardware_SendDirectionLog(data.E0.AzimuthAngle);
+                        // Nothing is playing: clear the radar once.
+                        if (showing)
+                        {
+                            lock (_dataLock) _latestData = default;
+                            showing = false;
+                        }
+                    }
+                    else if (sequence != analysedSequence)
+                    {
+                        // Audio arrives every 10 ms; polling faster would only re-analyse the same window.
+                        analysedSequence = sequence;
+                        NativeMethods.SpatialData data = NativeMethods.OD_DSP_ProcessBuffer(bufferPtr, sensitivity, separation);
+                        lock (_dataLock) _latestData = data;
+                        showing = true;
+
+                        if (hardwareEnabled && data.EntityCount > 0)
+                        {
+                            NativeMethods.OD_Hardware_SendDirectionLog(data.E0.AzimuthAngle);
+                        }
                     }
 
                     next += interval;
@@ -250,7 +314,7 @@ namespace OneDirectionCore
             }
         }
 
-        private void OnRendering(object? sender, EventArgs e)
+        private void OnFrame(object? sender, EventArgs e)
         {
             double now = _clock.Elapsed.TotalSeconds;
             double dt = now - _lastFrameSeconds;
@@ -316,9 +380,7 @@ namespace OneDirectionCore
 
         private void DrawHUD(DrawingContext dc)
         {
-            double width = _radarSize;
-            double height = _radarSize;
-            double half = width / 2.0;
+            double half = _radarSize / 2.0;
             double radius = (_fullscreen ? (this.ActualHeight * 0.45) : (half - 15.0));
 
             double cx = this.ActualWidth / 2.0;
@@ -326,26 +388,9 @@ namespace OneDirectionCore
 
             if (!_fullscreen)
             {
-                double margin = 40.0;
-                double px, py;
-
-
-                double screenW = this.ActualWidth;
-                double screenH = this.ActualHeight;
-
-                if (screenW < 300 || screenH < 300) return;
-
-                switch (_osdPosition) {
-                    case 0: px = margin; py = margin; break;
-                    case 1: px = (screenW - width) / 2.0; py = margin; break;
-                    case 2: px = screenW - width - margin; py = margin; break;
-                    case 3: px = margin; py = screenH - height - margin; break;
-                    case 4: px = (screenW - width) / 2.0; py = screenH - height - margin; break;
-                    case 5: px = screenW - width - margin; py = screenH - height - margin; break;
-                    default: px = (screenW - width) / 2.0; py = margin; break;
-                }
-                cx = px + half;
-                cy = py + half;
+                // The window itself sits at the chosen screen corner (see PlaceRadarWindow).
+                cx = WindowPad + half;
+                cy = WindowPad + half;
                 Point center = new Point(cx, cy);
 
 

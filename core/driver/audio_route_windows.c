@@ -59,6 +59,10 @@ static wchar_t previous_default_id[ID_CHARS];
 static WAVEFORMATEXTENSIBLE previous_format;
 static int have_previous_format = 0;
 static int route_active = 0;
+/* Set when the listening device was taken from the communications default, with the id it
+ * had then: a change means Windows now prefers another device (headphones plugged in). */
+static wchar_t route_comm_id[ID_CHARS];
+static int route_follows_comm = 0;
 
 static void copy_w(wchar_t *dst, const wchar_t *src) {
     wcsncpy(dst, src ? src : L"", ID_CHARS - 1);
@@ -243,16 +247,41 @@ static void com_leave(IMMDeviceEnumerator *en, IPolicyConfig *pc, int owned) {
     if (owned) CoUninitialize();
 }
 
+static Endpoint_t *named_output(Endpoint_t *list, int n, const wchar_t *name) {
+    if (!name || !name[0]) return NULL;
+    for (int i = 0; i < n; i++) {
+        if (!list[i].is_virtual && wcscmp(list[i].name, name) == 0) return &list[i];
+    }
+    return NULL;
+}
+
+/* The device the user hears when the virtual device is itself the default. The communications
+ * default still points at the real device, and Windows moves it when headphones are plugged in. */
+static Endpoint_t *choose_output(Endpoint_t *list, int n, const Endpoint_t *virt, const wchar_t *comm_id,
+                                 const wchar_t *preferred_name, int *follows_comm) {
+    *follows_comm = 0;
+    Endpoint_t *out = named_output(list, n, preferred_name);
+    if (out) return out;
+
+    Endpoint_t *comm = find_by_id(list, n, comm_id);
+    if (comm && comm != virt && !comm->is_virtual) {
+        *follows_comm = 1;
+        return comm;
+    }
+    for (int i = 0; i < n; i++) {
+        if (!list[i].is_virtual) return &list[i];
+    }
+    return NULL;
+}
+
 int OD_Route_Prepare(const wchar_t *preferred_output_name) {
     IMMDeviceEnumerator *en;
     IPolicyConfig *pc;
     int owned;
-    if (route_active) OD_Route_Restore();
-    capture_id[0] = capture_name[0] = output_id[0] = output_name[0] = previous_default_id[0] = 0;
-    have_previous_format = 0;
     if (!com_enter(&en, &pc, &owned)) return OD_ROUTE_NONE;
 
     int result = OD_ROUTE_NONE;
+    int follows_comm = 0;
     Endpoint_t list[MAX_ENDPOINTS];
     int n = enumerate(en, list, MAX_ENDPOINTS);
 
@@ -260,6 +289,40 @@ int OD_Route_Prepare(const wchar_t *preferred_output_name) {
     default_id(en, eConsole, console_id);
     default_id(en, eCommunications, comm_id);
     Endpoint_t *def = find_by_id(list, n, console_id);
+    Endpoint_t *virt = NULL;
+    Endpoint_t *out = NULL;
+
+    if (route_active) {
+        /* Re-evaluating a live route: a device was plugged in, or the Windows output was
+         * switched. The virtual device stays in 7.1 so the game is not interrupted twice. */
+        virt = find_by_id(list, n, capture_id);
+        if (virt) {
+            if (def && def != virt && !def->is_virtual) {
+                /* A real device was picked as the output: listen there from now on, and go
+                 * back to it when routing ends. */
+                out = def;
+                copy_w(previous_default_id, def->id);
+            } else {
+                out = choose_output(list, n, virt, comm_id, preferred_output_name, &follows_comm);
+            }
+            if (out && (virt->mix_channels >= 6 || set_channels(en, pc, virt->id, 8, 0))) {
+                if (def != virt) set_default(pc, virt->id);
+                goto routed;
+            }
+        }
+
+        /* The route cannot be kept: undo it and start from scratch below. */
+        OD_Route_Restore();
+        n = enumerate(en, list, MAX_ENDPOINTS);
+        default_id(en, eConsole, console_id);
+        default_id(en, eCommunications, comm_id);
+        def = find_by_id(list, n, console_id);
+        virt = NULL;
+        out = NULL;
+    }
+
+    capture_id[0] = capture_name[0] = output_id[0] = output_name[0] = previous_default_id[0] = 0;
+    have_previous_format = 0;
 
     if (def && def->mix_channels >= 6) {
         result = OD_ROUTE_NATIVE;
@@ -267,27 +330,18 @@ int OD_Route_Prepare(const wchar_t *preferred_output_name) {
     }
 
     /* The virtual device the game will render into: the default one when it qualifies. */
-    Endpoint_t *virt = (def && def->is_virtual && def->supports_71) ? def : NULL;
+    virt = (def && def->is_virtual && def->supports_71) ? def : NULL;
     for (int i = 0; i < n && !virt; i++) {
         if (list[i].is_virtual && list[i].supports_71) virt = &list[i];
     }
     if (!virt) goto done;
 
-    /* The device the user hears. When the virtual device is already the default (an audio
-     * enhancer made it so), the communications default still points at the real one. */
-    Endpoint_t *out = NULL;
-    if (preferred_output_name && preferred_output_name[0]) {
-        for (int i = 0; i < n && !out; i++) {
-            if (!list[i].is_virtual && wcscmp(list[i].name, preferred_output_name) == 0) out = &list[i];
-        }
-    }
-    if (!out && def && def != virt && !def->is_virtual) out = def;
-    if (!out) {
-        Endpoint_t *comm = find_by_id(list, n, comm_id);
-        if (comm && comm != virt && !comm->is_virtual) out = comm;
-    }
-    for (int i = 0; i < n && !out; i++) {
-        if (!list[i].is_virtual) out = &list[i];
+    /* The device the user hears: normally the one that was the default until now. */
+    if (def && def != virt && !def->is_virtual) {
+        out = named_output(list, n, preferred_output_name);
+        if (!out) out = def;
+    } else {
+        out = choose_output(list, n, virt, comm_id, preferred_output_name, &follows_comm);
     }
     if (!out) goto done;
 
@@ -312,16 +366,45 @@ int OD_Route_Prepare(const wchar_t *preferred_output_name) {
         set_default(pc, virt->id);
     }
 
+routed:
     copy_w(capture_id, virt->id);
     copy_w(capture_name, virt->name);
     copy_w(output_id, out->id);
     copy_w(output_name, out->name);
+    copy_w(route_comm_id, comm_id);
+    route_follows_comm = follows_comm;
     route_active = 1;
     result = OD_ROUTE_VIRTUAL;
 
 done:
     com_leave(en, pc, owned);
     return result;
+}
+
+int OD_Route_NeedsUpdate(void) {
+    if (!route_active) return 0;
+
+    IMMDeviceEnumerator *en;
+    IPolicyConfig *pc;
+    int owned;
+    if (!com_enter(&en, &pc, &owned)) return 0;
+
+    wchar_t console_id[ID_CHARS], comm_id[ID_CHARS];
+    default_id(en, eConsole, console_id);
+    default_id(en, eCommunications, comm_id);
+
+    int changed = 0;
+    if (console_id[0] && wcscmp(console_id, capture_id) != 0) {
+        /* The Windows output was switched: the game no longer renders into the virtual device. */
+        changed = 1;
+    } else if (route_follows_comm && comm_id[0] && wcscmp(comm_id, route_comm_id) != 0 &&
+               wcscmp(comm_id, capture_id) != 0) {
+        /* Headphones were plugged in: Windows now prefers a different real device. */
+        changed = 1;
+    }
+
+    com_leave(en, pc, owned);
+    return changed;
 }
 
 void OD_Route_Restore(void) {

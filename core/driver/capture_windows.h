@@ -32,6 +32,9 @@ __declspec(dllexport) int OD_Capture_IsDeviceLost(void);
 /* Channels in the output device's own mix format (2 = stereo, 6 = 5.1, 8 = 7.1),
  * valid after a successful OD_Capture_Init. Direction behind the listener needs 6 or more. */
 __declspec(dllexport) int OD_Capture_GetDeviceChannels(void);
+/* Changes whenever new audio has been captured. Polling faster than packets arrive (every
+ * 10 ms) would otherwise re-analyse an identical window. */
+__declspec(dllexport) int OD_Capture_GetSequence(void);
 
 
 #ifdef __cplusplus

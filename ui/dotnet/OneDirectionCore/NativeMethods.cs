@@ -78,6 +78,9 @@ namespace OneDirectionCore
         public static extern int OD_Capture_GetDeviceChannels();
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int OD_Capture_GetSequence();
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int OD_Capture_InitDevices([MarshalAs(UnmanagedType.LPWStr)] string? captureId,
                                                         [MarshalAs(UnmanagedType.LPWStr)] string? outputId);
 
@@ -92,6 +95,9 @@ namespace OneDirectionCore
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int OD_Route_Prepare([MarshalAs(UnmanagedType.LPWStr)] string? preferredOutputName);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int OD_Route_NeedsUpdate();
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern void OD_Route_Restore();

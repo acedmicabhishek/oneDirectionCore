@@ -99,6 +99,9 @@ namespace OneDirectionCore
         }
 
 
+        // Called when the app is launched again while already running.
+        public void BringToFront() => RestoreFromTray();
+
         private void RestoreFromTray()
         {
             this.Show();
@@ -281,6 +284,8 @@ namespace OneDirectionCore
 
         private void LoadListenDevices()
         {
+            // Devices come and go (headphones plugged in), so the list is rebuilt whenever it is opened.
+            string? selected = ComboListen.SelectedIndex > 0 ? ComboListen.SelectedItem as string : null;
             ComboListen.Items.Clear();
             ComboListen.Items.Add(ListenAutomatic);
             try
@@ -289,8 +294,12 @@ namespace OneDirectionCore
             }
             catch (DllNotFoundException) { }
             catch (EntryPointNotFoundException) { }
-            ComboListen.SelectedIndex = 0;
+
+            if (selected != null && ComboListen.Items.Contains(selected)) ComboListen.SelectedItem = selected;
+            else ComboListen.SelectedIndex = 0;
         }
+
+        private void ComboListen_DropDownOpened(object? sender, EventArgs e) => LoadListenDevices();
 
         // Make the game render 7.1 into a virtual device. Returns one of NativeMethods.Route*.
         private int PrepareSurroundRoute()
