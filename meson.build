@@ -3,9 +3,20 @@ project('oneDirectionCore', ['c', 'cpp'],
   default_options : ['warning_level=2', 'cpp_std=gnu++20', 'c_std=gnu11', 'prefer_static=true'])
 
 cc = meson.get_compiler('c')
-inc = include_directories('.', '3rdparty/imgui', '3rdparty/imgui/backends')
+fs = import('fs')
 thread_dep = dependency('threads')
 glfw_dep = dependency('glfw3', required: false)
+
+# Dear ImGui is not vendored. The ImGui overlay is only built when it has been
+# cloned into 3rdparty/imgui; od_core itself does not need it.
+have_imgui = fs.is_file('3rdparty/imgui/imgui.cpp')
+if have_imgui
+  inc = include_directories('.', '3rdparty/imgui', '3rdparty/imgui/backends')
+else
+  inc = include_directories('.')
+  warning('3rdparty/imgui not found - skipping the ImGui overlay. ' +
+          'Run: git clone https://github.com/ocornut/imgui 3rdparty/imgui')
+endif
 
 if host_machine.system() == 'windows'
   gl_dep = cc.find_library('opengl32')
@@ -15,15 +26,17 @@ if host_machine.system() == 'windows'
   core_lib = shared_library('od_core',
     sources: [
       'core/driver/capture_windows_ext.c',
+      'core/driver/audio_route_windows.c',
       'core/dsp/classifier_windows.c',
       'core/dsp/dsp_windows.c',
       'hardware/serial_controller_windows.c'
     ],
-    dependencies: [],
+    dependencies: [cc.find_library('ole32')],
     name_prefix: '',
     link_args: ['-static']
   )
 
+  if have_imgui
   executable('ODC-overlay-win',
     sources: [
       'overlay/linux/overlay_standalone.cpp',
@@ -40,6 +53,7 @@ if host_machine.system() == 'windows'
     link_with: [core_lib],
     link_args: ['-static']
   )
+  endif
 else
   pw_dep = dependency('libpipewire-0.3')
   gl_dep = dependency('gl', required: false)
@@ -67,6 +81,7 @@ else
   )
 
   # Linux Standalone Overlay
+  if have_imgui
   executable('ODC-overlay',
     sources: [
       'overlay/linux/overlay_standalone.cpp',
@@ -84,4 +99,5 @@ else
     link_with: [core_lib],
     link_args: ['-static-libgcc', '-static-libstdc++']
   )
+  endif
 endif

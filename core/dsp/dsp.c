@@ -186,7 +186,11 @@ SpatialData_t OD_DSP_ProcessBuffer(const AudioBuffer_t* buffer, float sensitivit
                 if (diff < -180.0f) diff += 360.0f;
 
                 if (fabsf(diff) < separation) {
-                    result.entities[e].azimuth_angle = (result.entities[e].azimuth_angle + azimuth) * 0.5f;
+                    /* Midpoint along the shorter arc, so 350 and 10 give 0, not 180. */
+                    float mid = azimuth + diff * 0.5f;
+                    if (mid < 0.0f) mid += 360.0f;
+                    if (mid >= 360.0f) mid -= 360.0f;
+                    result.entities[e].azimuth_angle = mid;
                     if (distance < result.entities[e].distance)
                         result.entities[e].distance = distance;
                     merged = true;
@@ -238,7 +242,11 @@ SpatialData_t OD_DSP_ProcessBuffer(const AudioBuffer_t* buffer, float sensitivit
             if (diff < -180.0f) diff += 360.0f;
 
             if (fabsf(diff) < separation) {
-                result.entities[e].azimuth_angle = (result.entities[e].azimuth_angle + azimuth) * 0.5f;
+                /* Midpoint along the shorter arc, so 350 and 10 give 0, not 180. */
+                float mid = azimuth + diff * 0.5f;
+                if (mid < 0.0f) mid += 360.0f;
+                if (mid >= 360.0f) mid -= 360.0f;
+                result.entities[e].azimuth_angle = mid;
                 if (distance < result.entities[e].distance)
                     result.entities[e].distance = distance;
                 merged = true;

@@ -20,7 +20,32 @@ Made for people with disabilities or hard of hearing to help them enjoy Compitit
 - Support for Linux and Windows
 ![Platform Support](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)
 ![.NET Version](https://img.shields.io/badge/.NET-10.0-purple)
-[![Download ODC](https://img.shields.io/badge/Download-ODC.msi-brightgreen?style=for-the-badge&logo=windows)](Download/ODC.msi)
+[![Download ODC](https://img.shields.io/badge/Download-ODC--Setup.exe-brightgreen?style=for-the-badge&logo=windows)](Download/ODC-Setup.exe?raw=true)
+
+---
+
+## Download and use (Windows)
+
+1. Download [ODC-Setup.exe](Download/ODC-Setup.exe?raw=true) (Windows 10/11 x64, version 1.1.0) and run it. It installs for the current user, so it does not ask for administrator rights. Windows may show a SmartScreen warning because the installer is not code-signed; choose "More info" > "Run anyway".
+2. Start **OneDirectionCore** from the Start Menu and press **START ENGINE**. The radar appears in the corner of the screen.
+3. In the game, set the display mode to **Fullscreen (Windowed)** or **Windowed**. In exclusive fullscreen no overlay can be drawn over the game.
+
+The window opens in **Simple** mode, which only has start and stop. **Advanced** shows every option. Settings are saved in `%APPDATA%\OneDirectionCore\settings.cfg`.
+
+## Surround Mode (sounds behind you)
+
+A game only outputs 7.1 when the default playback device is a 7.1 device, and most headsets are stereo. From a stereo signal the radar can only tell left from right, so everything is drawn across the front.
+
+Surround Mode, on by default, gets around this with a virtual 7.1 audio device:
+
+- Install [FxSound](https://www.fxsound.com/) once. Its driver provides the virtual 7.1 device. Other virtual playback devices that offer a 7.1 format should be picked up the same way, but only FxSound has been tested.
+- When the engine starts, ODC switches that device to 7.1 and makes it the default, so the game renders all eight channels into it. The radar reads those channels.
+- ODC plays a stereo mix of the same audio on your real headphones or speakers, and the volume keys keep working. **Listen On** in Advanced picks the device if the automatic choice is wrong.
+- When the engine stops, the previous audio settings are put back.
+
+The FxSound app forces its device to stereo, so ODC closes that app while the engine runs and starts it again afterwards.
+
+The line under the status says which mode is active. "Stereo only" means no virtual 7.1 device was found. A sound card that is already set to 5.1 or 7.1 is used directly.
 
 ---
 
@@ -46,10 +71,14 @@ pacman -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-meson mingw-w64-x86_
 # Navigate to project directory (change to your path)
 cd /c/Users/YourName/Desktop/oneDirectionCore
 
+# Optional: Dear ImGui is not vendored. Clone it only if you want the
+# standalone ImGui overlay (ODC-overlay-win.exe); od_core.dll does not need it.
+git clone https://github.com/ocornut/imgui 3rdparty/imgui
+
 # Configure build with Meson
 meson setup build_msys
 
-# Compile the native binaries (od_core.dll and ODC-overlay-win.exe)
+# Compile the native binaries (od_core.dll, plus ODC-overlay-win.exe if ImGui is present)
 meson compile -C build_msys
 ```
 
@@ -62,6 +91,7 @@ cd C:\Users\YourName\Desktop\oneDirectionCore
 
 # Copy native artifacts
 Copy-Item "build_msys\od_core.dll" "ui\dotnet\OneDirectionCore\"
+# Only if you built the optional ImGui overlay:
 Copy-Item "build_msys\ODC-overlay-win.exe" "ui\dotnet\OneDirectionCore\"
 
 # Publish single-file executable
@@ -71,21 +101,37 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 To run the application, launch `OneDirectionCore.exe` located within the publish output directory.
 
+### 4. Build the Installer (optional)
+With [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed, compile the script after publishing. It picks the executable up from the publish directory and writes `Download\ODC-Setup.exe`.
+
+```powershell
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" winInstaller\installer.iss
+```
+
 ---
 
 ## Build Instructions (Linux)
 
 Linux building relies strictly on system package managers and its extremely simple.
 
-### 1. Install Dependencies (Arch Linux)
+### 1. Install Dependencies
+Arch Linux:
 ```bash
 sudo pacman -Syu
-sudo pacman -S libpipewire-0.3-dev libglfw3-dev libgtk-4-dev meson ninja-build base-devel
+sudo pacman -S pipewire glfw gtk4 meson ninja base-devel
+```
+
+Debian / Ubuntu:
+```bash
+sudo apt install libpipewire-0.3-dev libglfw3-dev libgtk-4-dev meson ninja-build build-essential
 ```
 
 ### 2. Compile Core
 ```bash
 # In the project root
+# The Linux UI launches the ImGui overlay, so Dear ImGui is required here
+git clone https://github.com/ocornut/imgui 3rdparty/imgui
+
 meson setup build
 ninja -C build
 ```
@@ -94,8 +140,8 @@ ninja -C build
 
 ## Configuration Requirements
 
-For precise directional tracking on Windows, the system must output 7.1 surround sound coordinates to the driver.
+Directional tracking behind the listener needs the game to output 7.1. On Windows, Surround Mode (see above) sets this up automatically when a virtual 7.1 device is installed. To do it by hand instead:
 1. Right-click the Windows speaker icon > Sound Settings.
 2. Select your default output device > Format > Output: 7.1 Surround.
-3. Inside the OneDirectionCore UI, select 8 channels.
-The application will log `[Capture Windows] Final Format: 8 channels` on a successful startup.
+
+ODC detects a default device that is already surround and uses it directly. The status line shows "7.1 surround device" on a successful startup.

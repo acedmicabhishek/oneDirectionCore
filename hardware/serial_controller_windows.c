@@ -15,17 +15,30 @@ static int fd = -1;
 
 int OD_Hardware_Init(const char* com_port, int baud_rate) {
 #ifdef _WIN32
-    hSerial = CreateFileA(com_port, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (!com_port || !com_port[0]) return 0;
+    OD_Hardware_Close();
+
+    /* COM10 and above only open through the \\.\ device namespace. */
+    char path[64];
+    if (strncmp(com_port, "\\\\.\\", 4) == 0) snprintf(path, sizeof(path), "%s", com_port);
+    else snprintf(path, sizeof(path), "\\\\.\\%s", com_port);
+
+    hSerial = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hSerial == INVALID_HANDLE_VALUE) return 0;
 
     DCB dcbSerialParams = {0};
     dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
-    if (!GetCommState(hSerial, &dcbSerialParams)) return 0;
+    if (!GetCommState(hSerial, &dcbSerialParams)) { OD_Hardware_Close(); return 0; }
     dcbSerialParams.BaudRate = baud_rate;
     dcbSerialParams.ByteSize = 8;
     dcbSerialParams.StopBits = ONESTOPBIT;
     dcbSerialParams.Parity = NOPARITY;
-    if (!SetCommState(hSerial, &dcbSerialParams)) return 0;
+    if (!SetCommState(hSerial, &dcbSerialParams)) { OD_Hardware_Close(); return 0; }
+
+    /* Bound writes so a stalled device cannot hang the caller. */
+    COMMTIMEOUTS timeouts = {0};
+    timeouts.WriteTotalTimeoutConstant = 50;
+    SetCommTimeouts(hSerial, &timeouts);
     return 1;
 #else
     fd = open(com_port, O_RDWR | O_NOCTTY | O_SYNC);
@@ -60,13 +73,14 @@ int OD_Hardware_Init(const char* com_port, int baud_rate) {
 int OD_Hardware_SendDirectionLog(float azimuth) {
     
     int sector = (int)((azimuth + 22.5f) / 45.0f) % 8;
+    if (sector < 0) sector += 8;
 
     unsigned char payload = (1 << sector);
 
 #ifdef _WIN32
     if (hSerial == INVALID_HANDLE_VALUE) return 0;
-    DWORD bytesWritten;
-    WriteFile(hSerial, &payload, 1, &bytesWritten, NULL);
+    DWORD bytesWritten = 0;
+    if (!WriteFile(hSerial, &payload, 1, &bytesWritten, NULL)) return 0;
     return bytesWritten == 1;
 #else
     if (fd < 0) return 0;
